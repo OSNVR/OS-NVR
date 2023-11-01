@@ -7,20 +7,28 @@ import { newFeed } from "./static/scripts/components/feed.mjs";
 import { newModal } from "./static/scripts/components/modal.mjs";
 
 export function motion() {
-	return _motion(Hls);
+	const monitors = Monitors; // eslint-disable-line no-undef
+	const hasSubStream = (monitorID) => {
+		if (monitors[monitorID] && monitors[monitorID].hasSubStream) {
+			return monitors[monitorID].subInputEnabled === "true";
+		}
+		return false;
+	};
+
+	return _motion(Hls, hasSubStream);
 }
 
-function _motion(hls) {
+function _motion(hls, hasSubStream) {
 	const fields = {
 		enable: fieldTemplate.toggle("Enable motion detection", "false"),
-		feedRate: fieldTemplate.integer("Feed rate (fps)", "", "2"),
+		feedRate: fieldTemplate.integer("Feed rate (fps)", "", 2),
 		frameScale: fieldTemplate.select(
 			"Frame scale",
 			["full", "half", "third", "quarter", "sixth", "eighth"],
-			"full",
+			"full"
 		),
-		duration: fieldTemplate.integer("Trigger duration (sec)", "", "120"),
-		zones: zones(hls),
+		duration: fieldTemplate.integer("Trigger duration (sec)", "", 120),
+		zones: zones(hls, hasSubStream),
 	};
 
 	const form = newForm(fields);
@@ -70,8 +78,8 @@ function _motion(hls) {
 			<li id="${id}" class="form-field" style="display:flex;">
 				<label class="form-field-label">Motion detection</label>
 				<div>
-					<button class="form-field-edit-btn" style="background: var(--color3);">
-						<img src="static/icons/feather/edit-3.svg"/>
+					<button class="form-field-edit-btn" style="background: var(--color2);">
+						<img class="form-field-edit-btn-img" src="static/icons/feather/edit-3.svg"/>
 					</button>
 				</div>
 			</li> `,
@@ -105,7 +113,116 @@ function _motion(hls) {
 	};
 }
 
-function zones(hls) {
+const zonePreviewHtml = (zones) => {
+	// Arbitrary colors to differentiate between zones.
+	const colorMap = [
+		"red",
+		"green",
+		"blue",
+		"yellow",
+		"purple",
+		"orange",
+		"grey",
+		"cyan",
+	];
+	let html = "";
+	for (const i of Object.keys(zones)) {
+		const zone = zones[i];
+		if (!zone.preview) {
+			continue;
+		}
+		let points = "";
+		for (const p of zone.area) {
+			points += `${p[0]},${p[1]} `;
+		}
+		html += `
+			<svg
+				viewBox="0 0 100 100"
+				preserveAspectRatio="none"
+				style="position: absolute; width: 100%; height: 100%; opacity: 0.2;"
+			>
+				<polygon points="${points}" style=" fill: ${colorMap[i]};"/>
+			</svg>`;
+	}
+	return html;
+};
+
+function newZonePointsRenderer($points, updatePreview) {
+	const html = (zone) => {
+		const inputPointHtml = (value) => {
+			return `
+				<input
+					class="motion-modal-input-point"
+					type="number"
+					min="0"
+					max="100"
+					value="${value}"
+				/>`;
+		};
+		const pointsHtml = (zone) => {
+			let html = "";
+			for (const point of Object.entries(zone.area)) {
+				const index = point[0];
+				const [x, y] = point[1];
+				html += `
+					<div class="js-modal-point motion-modal-point">
+						${inputPointHtml(x)}
+						<span class="motion-modal-points-label">${index}</span>
+						${inputPointHtml(y)}
+					</div>`;
+			}
+			return html;
+		};
+		const editBtnHtml = (classID, icon) => {
+			return `
+				<button
+					class="${classID} form-field-edit-btn"
+					style="margin: 0; background: var(--color2);"
+				>
+					<img class="form-field-edit-btn-img" src="${icon}">
+				</button>`;
+		};
+		return `
+			${pointsHtml(zone)}
+			<div style="display: flex; column-gap: 0.2rem;">
+				${editBtnHtml("js-points-plus", "static/icons/feather/plus.svg")}
+				${editBtnHtml("js-points-minus", "static/icons/feather/minus.svg")}
+			</div>`;
+	};
+	const render = (zone) => {
+		$points.innerHTML = html(zone);
+		updatePreview();
+
+		for (const element of $points.querySelectorAll(".js-modal-point")) {
+			element.onchange = () => {
+				const index = element.querySelector("span").innerHTML;
+				const $points = element.querySelectorAll("input");
+				const x = Number.parseInt($points[0].value);
+				const y = Number.parseInt($points[1].value);
+				zone.area[index] = [x, y];
+				updatePreview();
+			};
+		}
+
+		$points.querySelector(".js-points-plus").onclick = () => {
+			zone.area.push([50, 50]);
+			render(zone);
+		};
+		$points.querySelector(".js-points-minus").onclick = () => {
+			if (zone.area.length > 3) {
+				zone.area.pop();
+				render(zone);
+			}
+		};
+	};
+	return {
+		render(zone) {
+			render(zone);
+		},
+	};
+}
+
+function zones(hls, hasSubStream) {
 	let modal,
 		$modalContent,
 		$enable,
@@ -114,8 +231,11 @@ function zones(hls) {
 		$thresholdMax,
 		$preview,
 		$feed,
-		$feedOverlay,
-		$points;
+		$points,
+		$zoneSelect,
+		pointsRenderer,
+		zones,
+		feed;
 
 	const renderModal = (element, feed) => {
 		const html = `
@@ -126,13 +246,13 @@ function zones(hls) {
 						class="js-add-zone form-field-edit-btn"
 						style="background: var(--color2)"
 					>
-						<img src="static/icons/feather/plus.svg"/>
+						<img class="form-field-edit-btn-img" src="static/icons/feather/plus.svg"/>
 					</div>
 					<div
 						class="js-remove-zone form-field-edit-btn"
 						style="margin-left: 0.2rem; background: var(--color2)"
 					>
-						<img src="static/icons/feather/minus.svg"/>
+						<img class="form-field-edit-btn-img" src="static/icons/feather/minus.svg"/>
 					</div>
 				</div>
 			</li>
@@ -200,11 +320,10 @@ function zones(hls) {
 		$modalContent = modal.init(element);
 
 		$zoneSelect = $modalContent.querySelector(".js-zone-select");
-		$zoneSelect.innerHTML = renderOptions();
 
 		$enable = $modalContent.querySelector(".js-enable");
 		$enable.addEventListener("change", () => {
-			selectedZone.enable = $enable.value === "true";
+			getSelectedZone().enable = $enable.value === "true";
 		});
 
 		$sensitivity = $modalContent.querySelector(".js-sensitivity");
@@ -213,21 +332,27 @@ function zones(hls) {
 		$thresholdMin.addEventListener("change", () => {
 			const threshold = Number.parseFloat($thresholdMin.value);
 			if (threshold >= 0 && threshold <= 100) {
-				selectedZone.thresholdMin = threshold;
+				getSelectedZone().thresholdMin = threshold;
 			}
 		});
 		$thresholdMax = $modalContent.querySelector(".js-threshold-max");
 		$thresholdMax.addEventListener("change", () => {
 			const threshold = Number.parseFloat($thresholdMax.value);
 			if (threshold >= 0 && threshold <= 100) {
-				selectedZone.thresholdMax = threshold;
+				getSelectedZone().thresholdMax = threshold;
 			}
 		});
 
+		$feed = $modalContent.querySelector(".js-feed");
+		const $feedOverlay = $modalContent.querySelector(".js-feed-overlay");
+		const updatePreview = () => {
+			$feedOverlay.innerHTML = zonePreviewHtml(zones);
+		};
+
 		$preview = $modalContent.querySelector(".js-preview");
 		$preview.addEventListener("change", () => {
-			selectedZone.preview = $preview.value === "true";
-			renderPreview();
+			getSelectedZone().preview = $preview.value === "true";
+			updatePreview();
 		});
 
 		$zoneSelect.addEventListener("change", () => {
@@ -236,158 +361,55 @@ function zones(hls) {
 
 		$modalContent.querySelector(".js-add-zone").addEventListener("click", () => {
 			zones.push(newZone());
-
-			$zoneSelect.innerHTML = renderOptions();
-			$zoneSelect.value = $zoneSelect.options.at(-1).textContent;
+			$zoneSelect.innerHTML = zoneSelectHTML();
+			setSelectedZoneIndex(zones.length - 1);
 			loadZone();
 		});
 
 		$modalContent.querySelector(".js-remove-zone").addEventListener("click", () => {
 			if (zones.length > 1 && confirm("delete zone?")) {
-				const index = zones.indexOf(selectedZone);
+				const index = getSelectedZoneIndex();
 				zones.splice(index, 1);
-				$zoneSelect.innerHTML = renderOptions();
-				if (index > 0) {
-					$zoneSelect.value = "zone " + (index - 1);
-				}
+				$zoneSelect.innerHTML = zoneSelectHTML();
+				setSelectedZoneIndex(zones.length - 1);
 				loadZone();
 			}
 		});
 
-		$feed = $modalContent.querySelector(".js-feed");
-		$feedOverlay = $modalContent.querySelector(".js-feed-overlay");
-
 		$points = $modalContent.querySelector(".js-points");
+		pointsRenderer = newZonePointsRenderer($points, updatePreview);
 
+		$zoneSelect.innerHTML = zoneSelectHTML();
 		loadZone();
 	};
 
-	let $zoneSelect, selectedZone;
+	const setSelectedZoneIndex = (index) => {
+		return ($zoneSelect.value = `zone ${index}`);
+	};
+	const getSelectedZoneIndex = () => {
+		return $zoneSelect.value.slice(5, 6);
+	};
+	const getSelectedZone = () => {
+		return zones[getSelectedZoneIndex()];
+	};
 
 	const loadZone = () => {
-		const zoneIndex = $zoneSelect.value.slice(5, 6);
-		selectedZone = zones[zoneIndex];
-
+		const selectedZone = getSelectedZone();
 		$enable.value = selectedZone.enable.toString();
 		$sensitivity.value = selectedZone.sensitivity.toString();
 		$thresholdMin.value = selectedZone.thresholdMin.toString();
 		$thresholdMax.value = selectedZone.thresholdMax.toString();
 		$preview.value = selectedZone.preview.toString();
 
-		renderPoints(selectedZone);
+		pointsRenderer.render(selectedZone);
 	};
 
-	let zones, feed;
-
-	const renderOptions = () => {
+	const zoneSelectHTML = () => {
 		let html = "";
 		for (const index of Object.keys(zones)) {
 			html += `<option>zone ${index}</option>`;
 		}
 		return html;
-	};
-
-	const renderPreview = () => {
-		// Arbitrary colors to differentiate between zones.
-		const colorMap = [
-			"red",
-			"green",
-			"blue",
-			"yellow",
-			"purple",
-			"orange",
-			"grey",
-			"cyan",
-		];
-		let html = "";
-		for (const i of Object.keys(zones)) {
-			const zone = zones[i];
-			if (!zone.preview) {
-				continue;
-			}
-			let points = "";
-			for (const p of zone.area) {
-				points += p[0] + "," + p[1] + " ";
-			}
-			html += `
-					<svg
-						viewBox="0 0 100 100"
-						preserveAspectRatio="none"
-						style="position: absolute; width: 100%; height: 100%; opacity: 0.2;"
-					>
-						<polygon
-							points="${points}"
-							style=" fill: ${colorMap[i]};"
-						/>
-					</svg>`;
-		}
-		$feedOverlay.innerHTML = html;
-	};
-
-	const renderPoints = (zone) => {
-		let html = "";
-		for (const point of Object.entries(zone.area)) {
-			const index = point[0];
-			const [x, y] = point[1];
-			html += `
-					<div class="js-modal-point motion-modal-point">
-						<input
-							class="motion-modal-input-point"
-							type="number"
-							min="0"
-							max="100"
-							value="${x}"
-						/>
-						<span class="motion-modal-points-label">${index}</span>
-						<input
-							class="motion-modal-input-point"
-							type="number"
-							min="0"
-							max="100"
-							value="${y}"
-						/>
-					</div>`;
-		}
-		html += `
-				<div style="display: flex; column-gap: 0.2rem;">
-					<button
-						class="js-points-plus form-field-edit-btn"
-						style="margin: 0; background: var(--color2);"
-					>
-						<img src="static/icons/feather/plus.svg">
-					</button>
-					<button
-						class="js-points-minus form-field-edit-btn red"
-						style="margin: 0; background: var(--color2);"
-					>
-						<img src="static/icons/feather/minus.svg">
-					</button>
-				</div>`;
-
-		$points.innerHTML = html;
-		renderPreview();
-
-		for (const element of $modalContent.querySelectorAll(".js-modal-point")) {
-			element.onchange = () => {
-				const index = element.querySelector("span").innerHTML;
-				const $points = element.querySelectorAll("input");
-				const x = Number.parseInt($points[0].value);
-				const y = Number.parseInt($points[1].value);
-				zone.area[index] = [x, y];
-				renderPreview();
-			};
-		}
-
-		$modalContent.querySelector(".js-points-plus").onclick = () => {
-			zone.area.push([50, 50]);
-			renderPoints(zone);
-		};
-		$modalContent.querySelector(".js-points-minus").onclick = () => {
-			if (zone.area.length > 3) {
-				zone.area.pop();
-				renderPoints(zone);
-			}
-		};
 	};
 
 	const newZone = () => {
@@ -408,7 +430,6 @@ function zones(hls) {
 	let rendered, fields;
 
 	const id = uniqueID();
-
 	return {
 		html: `
 			<li
@@ -416,14 +437,10 @@ function zones(hls) {
 				class="form-field"
 				style="display:flex; padding-bottom:0.25rem;"
 			>
-				<label
-					class="form-field-label"
-					style="width:100%"
-					>Zones
-				</label>
+				<label class="form-field-label" style="width:100%">Zones</label>
 				<div style="width:auto">
 					<button class="form-field-edit-btn color2">
-						<img src="static/icons/feather/edit-3.svg"/>
+						<img class="form-field-edit-btn-img" src="static/icons/feather/edit-3.svg"/>
 					</button>
 				</div>
 			</li> `,
@@ -433,8 +450,10 @@ function zones(hls) {
 		set(input, _, f) {
 			fields = f;
 			zones = input === "" ? [newZone()] : input;
+
 			if (rendered) {
-				$zoneSelect.value = "zone 0";
+				setSelectedZoneIndex(0);
+				$zoneSelect.innerHTML = zoneSelectHTML();
 				loadZone();
 			}
 		},
@@ -443,7 +462,8 @@ function zones(hls) {
 			element
 				.querySelector(".form-field-edit-btn")
 				.addEventListener("click", () => {
-					const subInputEnabled = fields.subInput.value() === "" ? "" : "true";
+					// On open modal.
+					const subInputEnabled = hasSubStream(fields.id.value());
 					const monitor = {
 						id: fields.id.value(),
 						audioEnabled: "false",
@@ -455,6 +475,7 @@ function zones(hls) {
 						// Update feed.
 						$feed.innerHTML = feed.html;
 					} else {
+						// Render modal.
 						renderModal(element, feed);
 						modal.onClose(() => {
 							feed.destroy();

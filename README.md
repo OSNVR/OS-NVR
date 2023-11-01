@@ -2,21 +2,17 @@
 
 [Screenshots](https://codeberg.org/Curid/os-nvr_assets/src/branch/master/screenshots)
 
-## Overview
+<br>
 
-##### beta release.
+### This project has been rewritten in Rust and renamed to [SentryShot.](https://github.com/SentryShot/sentryshot) This old version will continue to be maintained as long as anyone uses it or the new version reaches feature parity.
+
+<br>
+
+## Overview
 
 OS-NVR is a mobile-friendly extensible CCTV system.
 
-The front-end is written completely from scratch to give the best performance on mobile/low-end devices. The back-end is written in Go using FFmpeg for video processing.
-
-
-`OS-NVR` is a temporary name. [#2](https://codeberg.org/Curid/os-nvr/issues/2)
-
-
 Use [Issues](https://codeberg.org/Curid/os-nvr/issues) for bug reports, feature requests and support. [Matrix chat](https://matrix.to/#/#os_nvr:matrix.org)
-
-##### Note: iPhone support is currently limited.
 
 ## Documentation
 
@@ -27,22 +23,6 @@ Use [Issues](https://codeberg.org/Curid/os-nvr/issues) for bug reports, feature 
 - [Object Detection](./addons/doods2/README.md)
 - [Motion Detection](./addons/motion/README.md)
 - [Timeline viewer](./addons/timeline/README.md)
-
-<br>
-
-## Similar projects
-
-- [ZoneMinder](https://github.com/ZoneMinder/ZoneMinder)
-- [Moonfire](https://github.com/scottlamb/moonfire-nvr)
-- [Motion](https://github.com/Motion-Project/motion)[Eye](https://github.com/ccrisan/motioneye/)[OS](https://github.com/ccrisan/motioneyeos)
-- [Viseron](https://github.com/roflcoopter/viseron)
-- [camera.ui](https://github.com/SeydX/camera.ui)
-
-## Related projects
-
-- [TF-CCTV](https://codeberg.org/Curid/TF-CCTV)
-- [OpenIPC](https://openipc.org)
-- [PineCube](https://www.pine64.org/cube)
 
 <br>
 
