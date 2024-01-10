@@ -76,8 +76,13 @@ func setupGetTrackIDPath(
 				return trackID, *setuppedPath, nil
 			}
 		}
+		var err string
+		for trackID, track := range announcedTracks {
+			u2, _ := track.track.url(setuppedBaseURL)
+			err += fmt.Sprintf("T%v_%v_%v ", trackID, u2.String(), u.String())
+		}
 
-		return 0, "", fmt.Errorf("%w (%s)", ErrTrackInvalid, path)
+		return 0, "", fmt.Errorf("%w (%s) (%v)", ErrTrackInvalid, path, err)
 	}
 
 	i := stringsReverseIndex(path, "/trackID=")
