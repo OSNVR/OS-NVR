@@ -44,7 +44,7 @@ type Authenticator struct {
 
 // NewAuthenticator creates a authenticator similar to
 // basic.Authenticator but it allows all requests.
-func NewAuthenticator(env storage.ConfigEnv, logger *log.Logger) (auth.Authenticator, error) {
+func NewAuthenticator(env storage.ConfigEnv, _ *log.Logger) (auth.Authenticator, error) {
 	path := filepath.Join(env.ConfigDir, "users.json")
 	a := Authenticator{
 		path:     path,
@@ -72,7 +72,7 @@ func NewAuthenticator(env storage.ConfigEnv, logger *log.Logger) (auth.Authentic
 }
 
 // ValidateRequest allows all requests.
-func (a *Authenticator) ValidateRequest(r *http.Request) auth.ValidateResponse {
+func (a *Authenticator) ValidateRequest(_ *http.Request) auth.ValidateResponse {
 	return auth.ValidateResponse{
 		IsValid: true,
 		User: auth.Account{

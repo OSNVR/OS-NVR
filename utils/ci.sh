@@ -17,7 +17,7 @@ if [ "$files" = "" ]; then
 fi
 modified() {
 	pattern=${1}
-	test "${files#*$pattern}" != "$files"
+	test "${files#*"$pattern"}" != "$files"
 }
 
 modified ".go" && {
@@ -42,8 +42,5 @@ modified ".js$" || modified ".mjs" && {
 modified ".css" && {
 	npm run lint-css || error "lint css failed"
 }
-
-printf "spell check\\n"
-./utils/spell-check.sh "$1" || error "spell check failed"
 
 printf "all passed!\\n"

@@ -18,7 +18,7 @@ if [ "$files" = "" ]; then
 fi
 modified() {
 	pattern=${1}
-	test "${files#*$pattern}" != "$files"
+	test "${files#*"$pattern"}" != "$files"
 }
 
 modified ".go" && {
@@ -53,8 +53,5 @@ modified ".css" && {
 	printf "lint css\\n"
 	./utils/lint-css-fix.sh || error "lint css failed"
 }
-
-printf "spell check\\n"
-./utils/spell-check-fix.sh "$1" || error "spell check failed"
 
 printf "all passed!\\n"

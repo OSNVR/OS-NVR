@@ -25,7 +25,7 @@ function _motion(hls, hasSubStream) {
 		frameScale: fieldTemplate.select(
 			"Frame scale",
 			["full", "half", "third", "quarter", "sixth", "eighth"],
-			"full"
+			"full",
 		),
 		duration: fieldTemplate.integer("Trigger duration (sec)", "", 120),
 		zones: zones(hls, hasSubStream),

@@ -1,6 +1,6 @@
 steps:
     run:
         image: osnvr/os-nvr_ci:v0.14.0
-        commands: "nix-shell /shell.nix --command './utils/ci-command.sh'"
+        commands: "nix-shell /shell.nix --command 'npm install && ./utils/ci.sh'"
         when:
             event: [push, pull_request, tag]

@@ -127,7 +127,7 @@ func (*Dinf) Type() BoxType { return TypeDinf() }
 func (*Dinf) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Dinf) Marshal(w *bitio.Writer) error { return nil }
+func (b *Dinf) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** dref ****************************/
 
@@ -209,7 +209,7 @@ func (*Edts) Type() BoxType { return TypeEdts() }
 func (*Edts) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Edts) Marshal(w *bitio.Writer) error { return nil }
+func (b *Edts) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** elst ****************************/
 
@@ -292,7 +292,7 @@ func (*Free) Type() BoxType { return TypeFree() }
 func (*Free) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Free) Marshal(w *bitio.Writer) error { return nil }
+func (*Free) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** ftyp ****************************/
 
@@ -474,7 +474,7 @@ func (*Mdia) Type() BoxType { return TypeMdia() }
 func (*Mdia) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Mdia) Marshal(w *bitio.Writer) error { return nil }
+func (*Mdia) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** meta ****************************/
 
@@ -542,7 +542,7 @@ func (*Minf) Type() BoxType { return TypeMinf() }
 func (*Minf) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Minf) Marshal(w *bitio.Writer) error { return nil }
+func (b *Minf) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** moof ****************************/
 
@@ -559,7 +559,7 @@ func (*Moof) Type() BoxType { return TypeMoof() }
 func (*Moof) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Moof) Marshal(w *bitio.Writer) error { return nil }
+func (b *Moof) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** moov ****************************/
 
@@ -576,7 +576,7 @@ func (*Moov) Type() BoxType { return TypeMoov() }
 func (*Moov) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Moov) Marshal(w *bitio.Writer) error { return nil }
+func (b *Moov) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** mvex ****************************/
 
@@ -593,7 +593,7 @@ func (*Mvex) Type() BoxType { return TypeMvex() }
 func (*Mvex) Size() int { return 0 }
 
 // Marshal is never called.
-func (b *Mvex) Marshal(w *bitio.Writer) error { return nil }
+func (b *Mvex) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** mvhd ****************************/
 
@@ -945,7 +945,7 @@ func (*Stbl) Type() BoxType { return TypeStbl() }
 func (*Stbl) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Stbl) Marshal(w *bitio.Writer) error { return nil }
+func (*Stbl) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** stco ****************************/
 
@@ -1388,7 +1388,7 @@ func (*Traf) Type() BoxType { return TypeTraf() }
 func (*Traf) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Traf) Marshal(w *bitio.Writer) error { return nil }
+func (*Traf) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** trak ****************************/
 
@@ -1405,7 +1405,7 @@ func (*Trak) Type() BoxType { return TypeTrak() }
 func (*Trak) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Trak) Marshal(w *bitio.Writer) error { return nil }
+func (*Trak) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** trex ****************************/
 
@@ -1575,7 +1575,7 @@ func (*Udta) Type() BoxType { return TypeUdta() }
 func (*Udta) Size() int { return 0 }
 
 // Marshal is never called.
-func (*Udta) Marshal(w *bitio.Writer) error { return nil }
+func (*Udta) Marshal(_ *bitio.Writer) error { return nil }
 
 /*************************** vmhd ****************************/
 

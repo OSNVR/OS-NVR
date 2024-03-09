@@ -516,7 +516,7 @@ func (ss *ServerSession) handleAnnounce( //nolint:funlen
 	return res, err
 }
 
-func (ss *ServerSession) handleSetup(req *base.Request) (*base.Response, error) { //nolint:funlen,gocognit
+func (ss *ServerSession) handleSetup(req *base.Request) (*base.Response, error) { //nolint:funlen
 	err := ss.checkState(map[ServerSessionState]struct{}{
 		ServerSessionStateInitial:   {},
 		ServerSessionStatePrePlay:   {},
