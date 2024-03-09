@@ -28,4 +28,4 @@ steps:
 
             ./utils/ci.sh "$files_changed"
         when:
-            event: [pull_request, tag]
+            event: [push, pull_request, tag]

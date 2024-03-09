@@ -1,31 +1,11 @@
 # Installation
 
-- [Docker Bundle Install](#docker-bundle-install)
 - [Docker Compose Install](#docker-compose-install)
 - [Bare Metal Install](#bare-metal-install)
 - [Webserver](#web-server)
 - [Before continuing](#before-continuing)
 
 <br>
-
-## Docker Bundle Install
-##### Note: This is the quick and dirty way to use Docker.
-
-The Docker bundle can be installed using a single command.
-
-```
-docker run -it \
-	--env TZ=America/New_York \
-	--shm-size=500m \
-	-v /home/_nvr/os-nvr/configs \
-	-v /home/_nvr/os-nvr/storage \
-	-p 2000:2000 \
-	osnvr/os-nvr_bundle:latest
-```
-
-App will be served on `https://ip:2000`
-
-[Coral EdgeTPU](https://www.coral.ai/products/accelerator) is supported, if you own a device add `--device=/dev/bus/usb \`
 
 ## Docker Compose Install
 
