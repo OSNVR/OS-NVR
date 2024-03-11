@@ -4,3 +4,18 @@ steps:
         commands: "nix-shell /shell.nix --command 'npm install && ./utils/ci.sh'"
         when:
             event: [push, pull_request, tag]
+
+    docker:
+        image: woodpeckerci/plugin-docker-buildx
+        settings:
+            platforms: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8
+            repo: osnvr/os-nvr
+            dockerfile: "./utils/docker/Dockerfile"
+            tags: ["${CI_COMMIT_TAG}", "latest"]
+            build_args:
+                - osnvr_version=${CI_COMMIT_TAG}
+            username: "osnvr"
+            password:
+                from_secret: docker_hub_token
+        when:
+            event: [tag]
