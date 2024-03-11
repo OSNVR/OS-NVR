@@ -11,7 +11,7 @@ func TestNextSegment(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	playlist := newPlaylist(ctx, 3)
+	playlist := newPlaylist(ctx, 0, 3)
 	go playlist.start()
 
 	seg5 := &Segment{ID: 5}
@@ -33,7 +33,7 @@ func TestNextSegment(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			seg, err := playlist.nextSegment(tc.prevID)
+			seg, err := playlist.nextSegment(&Segment{ID: tc.prevID})
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, seg)
 		})
@@ -42,7 +42,7 @@ func TestNextSegment(t *testing.T) {
 		seg7 := &Segment{ID: 7}
 		done := make(chan struct{})
 		go func() {
-			seg, err := playlist.nextSegment(6)
+			seg, err := playlist.nextSegment(&Segment{ID: 6})
 			require.NoError(t, err)
 			require.Equal(t, seg7, seg)
 			close(done)

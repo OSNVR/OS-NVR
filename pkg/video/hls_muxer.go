@@ -24,10 +24,11 @@ type HLSMuxer struct {
 	pathConf        PathConf
 	muxerClose      muxerCloseFunc
 
-	ctx        context.Context
-	ctxCancel  func()
-	ringBuffer *ringbuffer.RingBuffer
-	muxer      *hls.Muxer
+	ctx         context.Context
+	ctxCancel   func()
+	ringBuffer  *ringbuffer.RingBuffer
+	muxer       *hls.Muxer
+	nextMuxerID uint16
 
 	// in
 	chRequest chan *hlsMuxerRequest
@@ -130,6 +131,12 @@ func (m *HLSMuxer) run(tracks gortsplib.Tracks) error {
 	return nil
 }
 
+func (m *HLSMuxer) genMuxerID() uint16 {
+	id := m.nextMuxerID
+	m.nextMuxerID++
+	return id
+}
+
 func parseTracks(tracks gortsplib.Tracks) (
 	*gortsplib.TrackH264, int,
 	*gortsplib.TrackMPEG4Audio,
@@ -190,6 +197,7 @@ func (m *HLSMuxer) createMuxer(
 
 	return hls.NewMuxer(
 		m.ctx,
+		m.genMuxerID(),
 		hlsSegmentCount,
 		hlsSegmentDuration,
 		hlsPartDuration,

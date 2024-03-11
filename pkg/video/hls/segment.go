@@ -41,6 +41,7 @@ func (mbr *partsReader) Read(p []byte) (int, error) {
 // Segment .
 type Segment struct {
 	ID              uint64
+	muxerID         uint16
 	StartTime       time.Time // Segment start time.
 	startDTS        time.Duration
 	muxerStartTime  int64
@@ -58,6 +59,7 @@ type Segment struct {
 
 func newSegment(
 	id uint64,
+	muxerID uint16,
 	startTime time.Time,
 	startDTS time.Duration,
 	muxerStartTime int64,
@@ -68,6 +70,7 @@ func newSegment(
 ) *Segment {
 	s := &Segment{
 		ID:              id,
+		muxerID:         muxerID,
 		StartTime:       startTime,
 		startDTS:        startDTS,
 		muxerStartTime:  muxerStartTime,

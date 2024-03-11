@@ -39,6 +39,7 @@ var ErrTrackInvalid = errors.New("invalid H264 track: SPS or PPS not provided in
 // NewMuxer allocates a Muxer.
 func NewMuxer(
 	ctx context.Context,
+	id uint16,
 	segmentCount int,
 	segmentDuration time.Duration,
 	partDuration time.Duration,
@@ -47,7 +48,7 @@ func NewMuxer(
 	videoTrack *gortsplib.TrackH264,
 	audioTrack *gortsplib.TrackMPEG4Audio,
 ) *Muxer {
-	playlist := newPlaylist(ctx, segmentCount)
+	playlist := newPlaylist(ctx, id, segmentCount)
 	go playlist.start()
 
 	m := &Muxer{
@@ -57,6 +58,7 @@ func NewMuxer(
 	}
 
 	m.segmenter = newSegmenter(
+		id,
 		time.Now().UnixNano(),
 		segmentDuration,
 		partDuration,
@@ -141,8 +143,8 @@ func (m *Muxer) WaitForSegFinalized() {
 
 // NextSegment returns the first segment with a ID greater than prevID.
 // Will wait for new segments if the next segment isn't cached.
-func (m *Muxer) NextSegment(prevID uint64) (*Segment, error) {
-	return m.playlist.nextSegment(prevID)
+func (m *Muxer) NextSegment(maybePrevSeg *Segment) (*Segment, error) {
+	return m.playlist.nextSegment(maybePrevSeg)
 }
 
 // VideoTimescale the number of time units that pass per second.

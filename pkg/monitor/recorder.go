@@ -42,7 +42,7 @@ type Recorder struct {
 	hooks  Hooks
 
 	sleep   time.Duration
-	prevSeg uint64
+	prevSeg *hls.Segment
 }
 
 func newRecorder(m *Monitor) *Recorder {
@@ -231,7 +231,7 @@ func runRecording(ctx context.Context, r *Recorder) error {
 // ErrSkippedSegment skipped segment.
 var ErrSkippedSegment = errors.New("skipped segment")
 
-type nextSegmentFunc func(uint64) (*hls.Segment, error)
+type nextSegmentFunc func(*hls.Segment) (*hls.Segment, error)
 
 func generateVideo( //nolint:funlen
 	ctx context.Context,
@@ -241,8 +241,8 @@ func generateVideo( //nolint:funlen
 	videoTrack *gortsplib.TrackH264,
 	audioTrack *gortsplib.TrackMPEG4Audio,
 	maxDuration time.Duration,
-) (uint64, *time.Time, error) {
-	prevSeg := firstSegment.ID
+) (*hls.Segment, *time.Time, error) {
+	prevSeg := firstSegment
 	startTime := firstSegment.StartTime
 	stopTime := firstSegment.StartTime.Add(maxDuration)
 	endTime := startTime
@@ -252,13 +252,13 @@ func generateVideo( //nolint:funlen
 
 	meta, err := os.OpenFile(metaPath, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	defer meta.Close()
 
 	mdat, err := os.OpenFile(mdatPath, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	defer mdat.Close()
 
@@ -266,7 +266,7 @@ func generateVideo( //nolint:funlen
 	if audioTrack != nil {
 		audioConfig, err = audioTrack.Config.Marshal()
 		if err != nil {
-			return 0, nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -279,20 +279,20 @@ func generateVideo( //nolint:funlen
 
 	w, err := customformat.NewWriter(meta, mdat, header)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 
 	writeSegment := func(seg *hls.Segment) error {
 		if err := w.WriteSegment(seg); err != nil {
 			return err
 		}
-		prevSeg = seg.ID
+		prevSeg = seg
 		endTime = seg.StartTime.Add(seg.RenderedDuration)
 		return nil
 	}
 
 	if err := writeSegment(firstSegment); err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 
 	for {
@@ -305,13 +305,13 @@ func generateVideo( //nolint:funlen
 			return prevSeg, &endTime, nil
 		}
 
-		if seg.ID != prevSeg+1 {
-			return 0, nil, fmt.Errorf("%w: expected: %v got %v",
-				ErrSkippedSegment, prevSeg+1, seg.ID)
+		if seg.ID != prevSeg.ID+1 {
+			return nil, nil, fmt.Errorf("%w: expected: %v got %v",
+				ErrSkippedSegment, prevSeg.ID+1, seg.ID)
 		}
 
 		if err := writeSegment(seg); err != nil {
-			return 0, nil, err
+			return nil, nil, err
 		}
 
 		if seg.StartTime.After(stopTime) {

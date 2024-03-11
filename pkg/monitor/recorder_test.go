@@ -90,7 +90,7 @@ func (m *mockMuxer) AudioTrack() *gortsplib.TrackMPEG4Audio {
 	return m.audioTrack
 }
 
-func (m *mockMuxer) NextSegment(prevID uint64) (*hls.Segment, error) {
+func (m *mockMuxer) NextSegment(_ *hls.Segment) (*hls.Segment, error) {
 	seg := &hls.Segment{
 		ID:        uint64(m.segCount),
 		StartTime: time.Unix(1*int64(m.segCount), 0),

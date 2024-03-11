@@ -70,7 +70,8 @@ func partTargetDuration(
 }
 
 type playlist struct {
-	ctx context.Context
+	ctx     context.Context
+	muxerID uint16
 
 	segmentCount int
 
@@ -85,7 +86,7 @@ type playlist struct {
 	playlistsOnHold    map[blockingPlaylistRequest]struct{}
 	partsOnHold        map[blockingPartRequest]struct{}
 	segFinalOnHold     map[chan struct{}]struct{}
-	nextSegmentsOnHold map[nextSegmentRequest]struct{}
+	nextSegmentsOnHold map[nextSegmentRequest2]struct{}
 
 	chPlaylist         chan playlistRequest
 	chSegment          chan segmentRequest
@@ -97,9 +98,10 @@ type playlist struct {
 	chNextSegment      chan nextSegmentRequest
 }
 
-func newPlaylist(ctx context.Context, segmentCount int) *playlist {
+func newPlaylist(ctx context.Context, muxerID uint16, segmentCount int) *playlist {
 	return &playlist{
 		ctx:            ctx,
+		muxerID:        muxerID,
 		segmentCount:   segmentCount,
 		segmentsByName: make(map[string]*Segment),
 		partsByName:    make(map[string]*MuxerPart),
@@ -107,7 +109,7 @@ func newPlaylist(ctx context.Context, segmentCount int) *playlist {
 		playlistsOnHold:    make(map[blockingPlaylistRequest]struct{}),
 		partsOnHold:        make(map[blockingPartRequest]struct{}),
 		segFinalOnHold:     make(map[chan struct{}]struct{}),
-		nextSegmentsOnHold: make(map[nextSegmentRequest]struct{}),
+		nextSegmentsOnHold: make(map[nextSegmentRequest2]struct{}),
 
 		chPlaylist:         make(chan playlistRequest),
 		chSegment:          make(chan segmentRequest),
@@ -218,13 +220,24 @@ func (p *playlist) start() { //nolint:funlen,gocognit
 			p.segFinalOnHold[res] = struct{}{}
 
 		case req := <-p.chNextSegment:
+			prevID := func() uint64 {
+				if req.maybePrevSeg == nil {
+					return 0
+				}
+				prevSeg := req.maybePrevSeg
+				if prevSeg.muxerID == p.muxerID && prevSeg.ID < p.nextSegmentID {
+					return prevSeg.ID
+				}
+				return 0
+			}()
+
 			seg := func() *Segment {
 				for _, s := range p.segments {
 					seg, ok := s.(*Segment)
 					if !ok {
 						continue
 					}
-					if req.prevID < seg.ID || req.prevID >= p.nextSegmentID {
+					if prevID < seg.ID {
 						return seg
 					}
 				}
@@ -233,6 +246,10 @@ func (p *playlist) start() { //nolint:funlen,gocognit
 			if seg != nil {
 				req.res <- seg
 			} else {
+				req := nextSegmentRequest2{
+					prevID: prevID,
+					res:    req.res,
+				}
 				p.nextSegmentsOnHold[req] = struct{}{}
 			}
 		}
@@ -688,15 +705,20 @@ func (p *playlist) waitForSegFinalized() {
 }
 
 type nextSegmentRequest struct {
+	maybePrevSeg *Segment
+	res          chan *Segment
+}
+
+type nextSegmentRequest2 struct {
 	prevID uint64
 	res    chan *Segment
 }
 
-func (p *playlist) nextSegment(prevID uint64) (*Segment, error) {
+func (p *playlist) nextSegment(maybePrevSeg *Segment) (*Segment, error) {
 	nextSegmentRes := make(chan *Segment)
 	nextSegmentReq := nextSegmentRequest{
-		prevID: prevID,
-		res:    nextSegmentRes,
+		maybePrevSeg: maybePrevSeg,
+		res:          nextSegmentRes,
 	}
 	select {
 	case <-p.ctx.Done():

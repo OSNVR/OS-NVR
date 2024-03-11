@@ -44,6 +44,7 @@ func findCompatiblePartDuration(
 }
 
 type segmenter struct {
+	muxerID            uint16
 	segmentDuration    time.Duration
 	partDuration       time.Duration
 	segmentMaxSize     uint64
@@ -69,6 +70,7 @@ type segmenter struct {
 }
 
 func newSegmenter(
+	muxerID uint16,
 	muxerStartTime int64,
 	segmentDuration time.Duration,
 	partDuration time.Duration,
@@ -79,6 +81,7 @@ func newSegmenter(
 	onPartFinalized func(*MuxerPart),
 ) *segmenter {
 	return &segmenter{
+		muxerID:            muxerID,
 		segmentDuration:    segmentDuration,
 		partDuration:       partDuration,
 		segmentMaxSize:     segmentMaxSize,
@@ -213,6 +216,7 @@ func (m *segmenter) writeH264Entry( //nolint:funlen
 		// create first segment
 		m.currentSegment = newSegment(
 			m.genSegmentID(),
+			m.muxerID,
 			ntp,
 			time.Duration(sample.DTS-m.muxerStartTime),
 			m.muxerStartTime,
@@ -247,6 +251,7 @@ func (m *segmenter) writeH264Entry( //nolint:funlen
 
 			m.currentSegment = newSegment(
 				m.genSegmentID(),
+				m.muxerID,
 				ntp,
 				time.Duration(sample.DTS-m.muxerStartTime),
 				m.muxerStartTime,
