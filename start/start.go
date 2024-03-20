@@ -258,7 +258,7 @@ func findGoBin(goBin *string, path string) {
 
 	for _, dir := range dirs {
 		// Check if directory name starts with `go`.
-		if dir.Name()[:2] != "go" || !dir.IsDir() {
+		if len(dir.Name()) > 1 && dir.Name()[:2] != "go" || !dir.IsDir() {
 			continue
 		}
 
