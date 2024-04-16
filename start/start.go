@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -258,7 +259,7 @@ func findGoBin(goBin *string, path string) {
 
 	for _, dir := range dirs {
 		// Check if directory name starts with `go`.
-		if dir.Name()[:2] != "go" || !dir.IsDir() {
+		if !strings.HasPrefix(dir.Name(), "go") || !dir.IsDir() {
 			continue
 		}
 
