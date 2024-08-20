@@ -42,7 +42,7 @@ type Recorder struct {
 	hooks  Hooks
 
 	sleep   time.Duration
-	prevSeg *hls.Segment
+	prevSeg *hls.SegmentFinalized
 }
 
 func newRecorder(m *Monitor) *Recorder {
@@ -231,17 +231,17 @@ func runRecording(ctx context.Context, r *Recorder) error {
 // ErrSkippedSegment skipped segment.
 var ErrSkippedSegment = errors.New("skipped segment")
 
-type nextSegmentFunc func(*hls.Segment) (*hls.Segment, error)
+type nextSegmentFunc func(*hls.SegmentFinalized) (*hls.SegmentFinalized, error)
 
 func generateVideo( //nolint:funlen
 	ctx context.Context,
 	filePath string,
 	nextSegment nextSegmentFunc,
-	firstSegment *hls.Segment,
+	firstSegment *hls.SegmentFinalized,
 	videoTrack *gortsplib.TrackH264,
 	audioTrack *gortsplib.TrackMPEG4Audio,
 	maxDuration time.Duration,
-) (*hls.Segment, *time.Time, error) {
+) (*hls.SegmentFinalized, *time.Time, error) {
 	prevSeg := firstSegment
 	startTime := firstSegment.StartTime
 	stopTime := firstSegment.StartTime.Add(maxDuration)
@@ -282,7 +282,7 @@ func generateVideo( //nolint:funlen
 		return nil, nil, err
 	}
 
-	writeSegment := func(seg *hls.Segment) error {
+	writeSegment := func(seg *hls.SegmentFinalized) error {
 		if err := w.WriteSegment(seg); err != nil {
 			return err
 		}
@@ -324,7 +324,7 @@ func generateVideo( //nolint:funlen
 // container and piped into FFmpeg and then converted to jpeg.
 func (r *Recorder) generateThumbnail(
 	filePath string,
-	firstSegment *hls.Segment,
+	firstSegment *hls.SegmentFinalized,
 	videoTrack *gortsplib.TrackH264,
 ) {
 	videoBuffer := &bytes.Buffer{}

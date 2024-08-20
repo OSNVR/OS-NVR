@@ -12,17 +12,16 @@ func TestNextSegment(t *testing.T) {
 	defer cancel()
 
 	playlist := newPlaylist(ctx, 0, 3)
-	go playlist.start()
 
-	seg5 := &Segment{ID: 5}
-	seg6 := &Segment{ID: 6}
+	seg5 := &SegmentFinalized{ID: 5}
+	seg6 := &SegmentFinalized{ID: 6}
 
 	playlist.onSegmentFinalized(seg5)
 	playlist.onSegmentFinalized(seg6)
 
 	cases := map[string]struct {
 		prevID   uint64
-		expected *Segment
+		expected *SegmentFinalized
 	}{
 		"before": {3, seg5},
 		"ok":     {4, seg5},
@@ -33,16 +32,16 @@ func TestNextSegment(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			seg, err := playlist.nextSegment(&Segment{ID: tc.prevID})
+			seg, err := playlist.nextSegment(&SegmentFinalized{ID: tc.prevID})
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, seg)
 		})
 	}
 	t.Run("blocking", func(t *testing.T) {
-		seg7 := &Segment{ID: 7}
+		seg7 := &SegmentFinalized{ID: 7}
 		done := make(chan struct{})
 		go func() {
-			seg, err := playlist.nextSegment(&Segment{ID: 6})
+			seg, err := playlist.nextSegment(&SegmentFinalized{ID: 6})
 			require.NoError(t, err)
 			require.Equal(t, seg7, seg)
 			close(done)

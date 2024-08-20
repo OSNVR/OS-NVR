@@ -9,7 +9,7 @@ import (
 )
 
 type partsReader struct {
-	parts   []*MuxerPart
+	parts   []*MuxerPartFinalized
 	curPart int
 	curPos  int
 }
@@ -38,23 +38,21 @@ func (mbr *partsReader) Read(p []byte) (int, error) {
 	}
 }
 
-// Segment .
 type Segment struct {
-	ID              uint64
-	muxerID         uint16
-	StartTime       time.Time // Segment start time.
-	startDTS        time.Duration
-	muxerStartTime  int64
-	segmentMaxSize  uint64
-	audioTrack      *gortsplib.TrackMPEG4Audio
-	genPartID       func() uint64
-	onPartFinalized func(*MuxerPart)
+	ID             uint64
+	muxerID        uint16
+	StartTime      time.Time // Segment start time.
+	startDTS       time.Duration
+	muxerStartTime int64
+	segmentMaxSize uint64
+	audioTrack     *gortsplib.TrackMPEG4Audio
+	genPartID      func() uint64
+	playlist       *playlist
 
-	name             string
-	size             uint64
-	Parts            []*MuxerPart
-	currentPart      *MuxerPart
-	RenderedDuration time.Duration
+	name        string
+	size        uint64
+	Parts       []*MuxerPartFinalized
+	currentPart *MuxerPart
 }
 
 func newSegment(
@@ -66,19 +64,19 @@ func newSegment(
 	segmentMaxSize uint64,
 	audioTrack *gortsplib.TrackMPEG4Audio,
 	genPartID func() uint64,
-	onPartFinalized func(*MuxerPart),
+	playlist *playlist,
 ) *Segment {
 	s := &Segment{
-		ID:              id,
-		muxerID:         muxerID,
-		StartTime:       startTime,
-		startDTS:        startDTS,
-		muxerStartTime:  muxerStartTime,
-		segmentMaxSize:  segmentMaxSize,
-		audioTrack:      audioTrack,
-		genPartID:       genPartID,
-		onPartFinalized: onPartFinalized,
-		name:            "seg" + strconv.FormatUint(id, 10),
+		ID:             id,
+		muxerID:        muxerID,
+		StartTime:      startTime,
+		startDTS:       startDTS,
+		muxerStartTime: muxerStartTime,
+		segmentMaxSize: segmentMaxSize,
+		audioTrack:     audioTrack,
+		genPartID:      genPartID,
+		playlist:       playlist,
+		name:           "seg" + strconv.FormatUint(id, 10),
 	}
 
 	s.currentPart = newPart(
@@ -90,29 +88,25 @@ func newSegment(
 	return s
 }
 
-func (s *Segment) reader() io.Reader {
-	return &partsReader{parts: s.Parts}
-}
-
-func (s *Segment) getRenderedDuration() time.Duration {
-	return s.RenderedDuration
-}
-
-func (s *Segment) finalize(nextVideoSample *VideoSample) error {
-	if err := s.currentPart.finalize(); err != nil {
-		return err
+func (s Segment) finalize(nextVideoSample *VideoSample) (*SegmentFinalized, error) {
+	partFinalized, err := s.currentPart.finalize()
+	if err != nil {
+		return nil, err
 	}
-
-	if s.currentPart.renderedContent != nil {
-		s.onPartFinalized(s.currentPart)
-		s.Parts = append(s.Parts, s.currentPart)
+	if partFinalized.renderedContent != nil {
+		s.playlist.partFinalized(partFinalized)
+		s.Parts = append(s.Parts, partFinalized)
 	}
+	renderedDuration := time.Duration(nextVideoSample.DTS-s.muxerStartTime) - s.startDTS
 
-	s.currentPart = nil
-	s.RenderedDuration = time.Duration(
-		nextVideoSample.DTS-s.muxerStartTime) - s.startDTS
-
-	return nil
+	return &SegmentFinalized{
+		ID:               s.ID,
+		muxerID:          s.muxerID,
+		StartTime:        s.StartTime,
+		name:             s.name,
+		Parts:            s.Parts,
+		RenderedDuration: renderedDuration,
+	}, nil
 }
 
 // ErrMaximumSegmentSize reached maximum segment size.
@@ -131,12 +125,13 @@ func (s *Segment) writeH264(sample *VideoSample, adjustedPartDuration time.Durat
 
 	// switch part
 	if s.currentPart.duration() >= adjustedPartDuration {
-		if err := s.currentPart.finalize(); err != nil {
+		partFinalized, err := s.currentPart.finalize()
+		if err != nil {
 			return err
 		}
 
-		s.Parts = append(s.Parts, s.currentPart)
-		s.onPartFinalized(s.currentPart)
+		s.Parts = append(s.Parts, partFinalized)
+		s.playlist.partFinalized(partFinalized)
 
 		s.currentPart = newPart(
 			s.audioTrack,
@@ -158,4 +153,22 @@ func (s *Segment) writeAAC(sample *AudioSample) error {
 	s.currentPart.writeAAC(sample)
 
 	return nil
+}
+
+type SegmentFinalized struct {
+	ID        uint64
+	muxerID   uint16
+	StartTime time.Time
+	name      string
+	Parts     []*MuxerPartFinalized
+
+	RenderedDuration time.Duration
+}
+
+func (s *SegmentFinalized) reader() io.Reader {
+	return &partsReader{parts: s.Parts}
+}
+
+func (s *SegmentFinalized) getRenderedDuration() time.Duration {
+	return s.RenderedDuration
 }

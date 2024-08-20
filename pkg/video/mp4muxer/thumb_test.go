@@ -40,12 +40,12 @@ func TestGenerateThumbnailVideo(t *testing.T) {
 
 	videoTrack := &gortsplib.TrackH264{SPS: sps}
 
-	firstSegment := &hls.Segment{
+	firstSegment := &hls.SegmentFinalized{
 		StartTime:        time.Unix(0, int64(1*time.Hour)),
 		RenderedDuration: 1 * time.Hour,
 
 		ID: 1,
-		Parts: []*hls.MuxerPart{
+		Parts: []*hls.MuxerPartFinalized{
 			{
 				VideoSamples: []*hls.VideoSample{videoSample1},
 				AudioSamples: []*hls.AudioSample{audioSample1},
@@ -200,8 +200,8 @@ func TestGenerateThumbnailVideo(t *testing.T) {
 
 func TestGenerateThumbnailVideoErrors(t *testing.T) {
 	t.Run("sampleMissing", func(t *testing.T) {
-		segment := &hls.Segment{
-			Parts: []*hls.MuxerPart{{
+		segment := &hls.SegmentFinalized{
+			Parts: []*hls.MuxerPartFinalized{{
 				VideoSamples: []*hls.VideoSample{},
 			}},
 		}
@@ -209,8 +209,8 @@ func TestGenerateThumbnailVideoErrors(t *testing.T) {
 		require.ErrorIs(t, err, ErrSampleMissing)
 	})
 	t.Run("sampleInvalid", func(t *testing.T) {
-		segment := &hls.Segment{
-			Parts: []*hls.MuxerPart{{
+		segment := &hls.SegmentFinalized{
+			Parts: []*hls.MuxerPartFinalized{{
 				VideoSamples: []*hls.VideoSample{{
 					IdrPresent: false,
 				}},

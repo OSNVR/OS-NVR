@@ -286,10 +286,10 @@ type hlsMuxerRequest struct {
 	path string
 	file string
 	req  *http.Request
-	res  chan *hls.MuxerFileResponse
+	res  chan hls.MuxerFileResponse
 }
 
-func (m *HLSMuxer) handleRequest(req *hlsMuxerRequest) *hls.MuxerFileResponse {
+func (m *HLSMuxer) handleRequest(req *hlsMuxerRequest) hls.MuxerFileResponse {
 	p := req.req.URL.Query()
 	msn := func() string {
 		if len(p["_HLS_msn"]) > 0 {
@@ -318,9 +318,7 @@ func (m *HLSMuxer) onRequest(req *hlsMuxerRequest) {
 	select {
 	case m.chRequest <- req:
 	case <-m.ctx.Done():
-		req.res <- &hls.MuxerFileResponse{
-			Status: http.StatusInternalServerError,
-		}
+		req.res <- hls.MuxerFileResponse{Status: http.StatusInternalServerError}
 	}
 }
 

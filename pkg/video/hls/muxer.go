@@ -19,6 +19,10 @@ type MuxerFileResponse struct {
 	Body   io.Reader
 }
 
+func muxerFileReponseCancelled() MuxerFileResponse {
+	return MuxerFileResponse{Status: http.StatusInternalServerError}
+}
+
 // Muxer is a HLS muxer.
 type Muxer struct {
 	playlist   *playlist
@@ -49,8 +53,6 @@ func NewMuxer(
 	audioTrack *gortsplib.TrackMPEG4Audio,
 ) *Muxer {
 	playlist := newPlaylist(ctx, id, segmentCount)
-	go playlist.start()
-
 	m := &Muxer{
 		playlist:   playlist,
 		logf:       logf,
@@ -65,8 +67,7 @@ func NewMuxer(
 		segmentMaxSize,
 		videoTrack,
 		audioTrack,
-		m.playlist.onSegmentFinalized,
-		m.playlist.partFinalized,
+		m.playlist,
 	)
 	return m
 }
@@ -90,7 +91,7 @@ func (m *Muxer) File(
 	msn string,
 	part string,
 	skip string,
-) *MuxerFileResponse {
+) MuxerFileResponse {
 	if name == "index.m3u8" {
 		return primaryPlaylist(m.videoTrack, m.audioTrack)
 	}
@@ -107,14 +108,14 @@ func (m *Muxer) File(
 			initContent, err := generateInit(m.videoTrack, m.audioTrack)
 			if err != nil {
 				m.logf(log.LevelError, "generate init.mp4: %w", err)
-				return &MuxerFileResponse{Status: http.StatusInternalServerError}
+				return MuxerFileResponse{Status: http.StatusInternalServerError}
 			}
 			m.videoLastSPS = m.videoTrack.SPS
 			m.videoLastPPS = m.videoTrack.PPS
 			m.initContent = initContent
 		}
 
-		return &MuxerFileResponse{
+		return MuxerFileResponse{
 			Status: http.StatusOK,
 			Header: map[string]string{
 				"Content-Type": "video/mp4",
@@ -143,7 +144,7 @@ func (m *Muxer) WaitForSegFinalized() {
 
 // NextSegment returns the first segment with a ID greater than prevID.
 // Will wait for new segments if the next segment isn't cached.
-func (m *Muxer) NextSegment(maybePrevSeg *Segment) (*Segment, error) {
+func (m *Muxer) NextSegment(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, error) {
 	return m.playlist.nextSegment(maybePrevSeg)
 }
 

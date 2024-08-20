@@ -146,7 +146,7 @@ func (s *hlsServer) run() {
 				m.onRequest(req)
 				continue
 			}
-			req.res <- &hls.MuxerFileResponse{Status: http.StatusNotFound}
+			req.res <- hls.MuxerFileResponse{Status: http.StatusNotFound}
 
 		case req := <-s.chMuxerbyPathName:
 			m, exist := s.muxers[req.pathName]
@@ -210,7 +210,7 @@ func (s *hlsServer) HandleRequest() http.HandlerFunc { //nolint:funlen
 
 		dir = strings.TrimSuffix(dir, "/")
 
-		cres := make(chan *hls.MuxerFileResponse)
+		cres := make(chan hls.MuxerFileResponse)
 		hreq := &hlsMuxerRequest{
 			path: dir,
 			file: fname,

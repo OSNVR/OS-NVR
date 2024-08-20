@@ -21,7 +21,7 @@ var (
 // frame that will be converted to jpeg by FFmpeg.
 func GenerateThumbnailVideo( //nolint:funlen
 	out io.Writer,
-	segment *hls.Segment,
+	segment *hls.SegmentFinalized,
 	videoTrack *gortsplib.TrackH264,
 ) error {
 	if segment == nil || len(segment.Parts) == 0 ||

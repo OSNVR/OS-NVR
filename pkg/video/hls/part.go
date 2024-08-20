@@ -283,17 +283,14 @@ func partName(id uint64) string {
 	return "part" + strconv.FormatUint(id, 10)
 }
 
-// MuxerPart fmp4 part.
 type MuxerPart struct {
 	audioTrack     *gortsplib.TrackMPEG4Audio
 	muxerStartTime int64
 	id             uint64
 
-	isIndependent    bool
-	VideoSamples     []*VideoSample
-	AudioSamples     []*AudioSample
-	renderedContent  []byte
-	renderedDuration time.Duration
+	isIndependent bool
+	VideoSamples  []*VideoSample
+	AudioSamples  []*AudioSample
 }
 
 func newPart(
@@ -308,14 +305,6 @@ func newPart(
 	}
 }
 
-func (p *MuxerPart) name() string {
-	return partName(p.id)
-}
-
-func (p *MuxerPart) reader() io.Reader {
-	return bytes.NewReader(p.renderedContent)
-}
-
 func (p *MuxerPart) duration() time.Duration {
 	total := time.Duration(0)
 	for _, e := range p.VideoSamples {
@@ -324,21 +313,34 @@ func (p *MuxerPart) duration() time.Duration {
 	return total
 }
 
-func (p *MuxerPart) finalize() error {
+func (p MuxerPart) finalize() (*MuxerPartFinalized, error) {
 	if len(p.VideoSamples) > 0 || len(p.AudioSamples) > 0 {
-		var err error
-		p.renderedContent, err = generatePart(
+		renderedContent, err := generatePart(
 			p.muxerStartTime,
 			p.audioTrack,
 			p.VideoSamples,
-			p.AudioSamples)
+			p.AudioSamples,
+		)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		p.renderedDuration = p.duration()
+
+		return &MuxerPartFinalized{
+			id:               p.id,
+			isIndependent:    p.isIndependent,
+			VideoSamples:     p.VideoSamples,
+			AudioSamples:     p.AudioSamples,
+			renderedContent:  renderedContent,
+			renderedDuration: p.duration(),
+		}, nil
 	}
 
-	return nil
+	return &MuxerPartFinalized{
+		id:            p.id,
+		isIndependent: p.isIndependent,
+		VideoSamples:  p.VideoSamples,
+		AudioSamples:  p.AudioSamples,
+	}, nil
 }
 
 func (p *MuxerPart) writeH264(sample *VideoSample) {
@@ -350,4 +352,21 @@ func (p *MuxerPart) writeH264(sample *VideoSample) {
 
 func (p *MuxerPart) writeAAC(sample *AudioSample) {
 	p.AudioSamples = append(p.AudioSamples, sample)
+}
+
+type MuxerPartFinalized struct {
+	id               uint64
+	isIndependent    bool
+	VideoSamples     []*VideoSample
+	AudioSamples     []*AudioSample
+	renderedContent  []byte
+	renderedDuration time.Duration
+}
+
+func (p *MuxerPartFinalized) name() string {
+	return partName(p.id)
+}
+
+func (p *MuxerPartFinalized) reader() io.Reader {
+	return bytes.NewReader(p.renderedContent)
 }

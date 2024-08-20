@@ -44,14 +44,13 @@ func findCompatiblePartDuration(
 }
 
 type segmenter struct {
-	muxerID            uint16
-	segmentDuration    time.Duration
-	partDuration       time.Duration
-	segmentMaxSize     uint64
-	videoTrack         *gortsplib.TrackH264
-	audioTrack         *gortsplib.TrackMPEG4Audio
-	onSegmentFinalized func(*Segment)
-	onPartFinalized    func(*MuxerPart)
+	muxerID         uint16
+	segmentDuration time.Duration
+	partDuration    time.Duration
+	segmentMaxSize  uint64
+	videoTrack      *gortsplib.TrackH264
+	audioTrack      *gortsplib.TrackMPEG4Audio
+	playlist        *playlist
 
 	startDTS                       time.Duration
 	muxerStartTime                 int64
@@ -77,21 +76,19 @@ func newSegmenter(
 	segmentMaxSize uint64,
 	videoTrack *gortsplib.TrackH264,
 	audioTrack *gortsplib.TrackMPEG4Audio,
-	onSegmentFinalized func(*Segment),
-	onPartFinalized func(*MuxerPart),
+	playlist *playlist,
 ) *segmenter {
 	return &segmenter{
-		muxerID:            muxerID,
-		segmentDuration:    segmentDuration,
-		partDuration:       partDuration,
-		segmentMaxSize:     segmentMaxSize,
-		videoTrack:         videoTrack,
-		audioTrack:         audioTrack,
-		onSegmentFinalized: onSegmentFinalized,
-		onPartFinalized:    onPartFinalized,
-		muxerStartTime:     muxerStartTime,
-		nextSegmentID:      7, // Required by iOS.
-		sampleDurations:    make(map[time.Duration]struct{}),
+		muxerID:         muxerID,
+		segmentDuration: segmentDuration,
+		partDuration:    partDuration,
+		segmentMaxSize:  segmentMaxSize,
+		videoTrack:      videoTrack,
+		audioTrack:      audioTrack,
+		playlist:        playlist,
+		muxerStartTime:  muxerStartTime,
+		nextSegmentID:   7, // Required by iOS.
+		sampleDurations: make(map[time.Duration]struct{}),
 	}
 }
 
@@ -223,7 +220,7 @@ func (m *segmenter) writeH264Entry( //nolint:funlen
 			m.segmentMaxSize,
 			m.audioTrack,
 			m.genPartID,
-			m.onPartFinalized,
+			m.playlist,
 		)
 	}
 
@@ -241,11 +238,11 @@ func (m *segmenter) writeH264Entry( //nolint:funlen
 
 		if (time.Duration(m.nextVideoSample.DTS)-m.currentSegment.startDTS) >= m.segmentDuration ||
 			paramsChanged {
-			err := m.currentSegment.finalize(m.nextVideoSample)
+			finalizedSegment, err := m.currentSegment.finalize(m.nextVideoSample)
 			if err != nil {
 				return err
 			}
-			m.onSegmentFinalized(m.currentSegment)
+			m.playlist.onSegmentFinalized(finalizedSegment)
 
 			m.firstSegmentFinalized = true
 
@@ -258,7 +255,7 @@ func (m *segmenter) writeH264Entry( //nolint:funlen
 				m.segmentMaxSize,
 				m.audioTrack,
 				m.genPartID,
-				m.onPartFinalized,
+				m.playlist,
 			)
 
 			if paramsChanged {

@@ -32,7 +32,7 @@ func NewWriter(meta io.Writer, mdat io.Writer, header Header) (*Writer, error) {
 }
 
 // WriteSegment Writes a HLS segment in the custom format to the output files.
-func (w *Writer) WriteSegment(segment *hls.Segment) error {
+func (w *Writer) WriteSegment(segment *hls.SegmentFinalized) error {
 	samples := sortSamples(*segment)
 	for _, s := range samples {
 		switch v := s.(type) {
@@ -56,7 +56,7 @@ type pair struct {
 	sample hls.Sample
 }
 
-func sortSamples(segment hls.Segment) []hls.Sample {
+func sortSamples(segment hls.SegmentFinalized) []hls.Sample {
 	pairs := []pair{}
 	for _, part := range segment.Parts {
 		for _, videoSample := range part.VideoSamples {

@@ -23,8 +23,8 @@ func TestWriter(t *testing.T) {
 	w, err := NewWriter(meta, mdat, testHeader)
 	require.NoError(t, err)
 
-	segment := &hls.Segment{
-		Parts: []*hls.MuxerPart{{
+	segment := &hls.SegmentFinalized{
+		Parts: []*hls.MuxerPartFinalized{{
 			VideoSamples: []*hls.VideoSample{{
 				PTS:        100000000000000000,
 				DTS:        200000000000000000,
