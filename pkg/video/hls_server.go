@@ -70,12 +70,6 @@ func (s *hlsServer) start(ctx context.Context, address string) error {
 	return nil
 }
 
-// Log is the main logging function.
-/*func (s *hlsServer) logf(level log.Level, format string, args ...interface{}) {
-	_ = level
-	fmt.Printf("[HLS] "+format+"\n", append([]interface{}{}, args...)...)
-}*/
-
 func (s *hlsServer) startServer(ln net.Listener) {
 	mux := http.NewServeMux()
 	mux.Handle("/hls/", s.HandleRequest())
@@ -116,7 +110,7 @@ func (s *hlsServer) run() {
 			return
 
 		case req := <-s.chPathSourceReady:
-			if _, exist := s.muxers[req.path.name]; exist {
+			if _, exist := s.muxers[req.pathID.name]; exist {
 				req.res <- pathSourceReadyResponse{err: ErrMuxerAleadyExists}
 			}
 
@@ -124,7 +118,10 @@ func (s *hlsServer) run() {
 				s.ctx,
 				s.readBufferCount,
 				s.wg,
-				req.path,
+				req.pathID,
+				req.pathConf,
+				req.pathLogf,
+				req.cancelFunc,
 				s.muxerClose,
 			)
 
@@ -134,7 +131,7 @@ func (s *hlsServer) run() {
 				}
 				continue
 			}
-			s.muxers[req.path.name] = m
+			s.muxers[req.pathID.name] = m
 			req.res <- pathSourceReadyResponse{muxer: m}
 
 		case pathName := <-s.chPathSourceNotReady:
@@ -160,9 +157,9 @@ func (s *hlsServer) run() {
 			req.res <- nil
 
 		case c := <-s.chMuxerClose:
-			_, exist := s.muxers[c.path.name]
+			_, exist := s.muxers[c.pathID.name]
 			if exist {
-				delete(s.muxers, c.path.name)
+				delete(s.muxers, c.pathID.name)
 			}
 		}
 	}
@@ -239,9 +236,12 @@ func (s *hlsServer) HandleRequest() http.HandlerFunc { //nolint:funlen
 }
 
 type pathSourceReadyRequest struct {
-	path   *path
-	tracks gortsplib.Tracks
-	res    chan pathSourceReadyResponse
+	pathID     pathID
+	pathConf   PathConf
+	pathLogf   log.Func
+	cancelFunc func()
+	tracks     gortsplib.Tracks
+	res        chan pathSourceReadyResponse
 }
 
 type pathSourceReadyResponse struct {
@@ -250,12 +250,21 @@ type pathSourceReadyResponse struct {
 }
 
 // pathSourceReady is called by path manager.
-func (s *hlsServer) pathSourceReady(pa *path, tracks gortsplib.Tracks) (*HLSMuxer, error) {
+func (s *hlsServer) pathSourceReady(
+	pathID pathID,
+	pathConf PathConf,
+	pathLogf log.Func,
+	cancelFunc func(),
+	tracks gortsplib.Tracks,
+) (*HLSMuxer, error) {
 	pathSourceRes := make(chan pathSourceReadyResponse)
 	pathSourceReq := pathSourceReadyRequest{
-		path:   pa,
-		tracks: tracks,
-		res:    pathSourceRes,
+		pathID:     pathID,
+		pathConf:   pathConf,
+		pathLogf:   pathLogf,
+		cancelFunc: cancelFunc,
+		tracks:     tracks,
+		res:        pathSourceRes,
 	}
 	select {
 	case s.chPathSourceReady <- pathSourceReq:

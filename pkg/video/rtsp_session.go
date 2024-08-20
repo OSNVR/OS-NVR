@@ -13,18 +13,13 @@ import (
 	"github.com/pion/rtp"
 )
 
-type rtspSessionPathManager interface {
-	publisherAdd(name string, session *rtspSession) (*path, error)
-	readerAdd(name string, session *rtspSession) (*path, *stream, error)
-}
-
 type rtspSession struct {
 	id          string
 	ss          *gortsplib.ServerSession
 	author      *gortsplib.ServerConn
-	pathManager rtspSessionPathManager
+	pathManager *pathManager
 
-	path            *path
+	pathID          pathID
 	pathLogf        log.Func
 	stream          *stream
 	state           gortsplib.ServerSessionState
@@ -36,7 +31,7 @@ func newRTSPSession(
 	id string,
 	ss *gortsplib.ServerSession,
 	sc *gortsplib.ServerConn,
-	pathManager rtspSessionPathManager,
+	pathManager *pathManager,
 	pathLogf log.Func,
 ) *rtspSession {
 	s := &rtspSession{
@@ -80,12 +75,10 @@ func (s *rtspSession) onConnClose(err error) {
 func (s *rtspSession) onClose(err error) {
 	switch s.ss.State() {
 	case gortsplib.ServerSessionStatePrePlay, gortsplib.ServerSessionStatePlay:
-		s.path.readerRemove(s)
-		s.path = nil
+		s.pathManager.pathReaderRemove(s.pathID, s)
 
 	case gortsplib.ServerSessionStatePreRecord, gortsplib.ServerSessionStateRecord:
-		s.path.close()
-		s.path = nil
+		s.pathManager.pathClose(s.pathID)
 	}
 
 	if s.pathLogf != nil {
@@ -109,12 +102,12 @@ func (s *rtspSession) onAnnounce(
 	pathName string,
 	tracks gortsplib.Tracks,
 ) (*base.Response, error) {
-	path, err := s.pathManager.publisherAdd(pathName, s)
+	pathID, err := s.pathManager.pathPublisherAdd(pathName, s)
 	if err != nil {
 		return &base.Response{StatusCode: base.StatusBadRequest}, err
 	}
 
-	s.path = path
+	s.pathID = *pathID
 	s.announcedTracks = tracks
 
 	s.stateMutex.Lock()
@@ -143,7 +136,7 @@ func (s *rtspSession) onSetup(
 	}
 
 	// play
-	path, stream, err := s.pathManager.readerAdd(pathName, s)
+	pathID, stream, err := s.pathManager.pathReaderAdd(pathName, s)
 	if err != nil {
 		if errors.Is(err, ErrPathNoOnePublishing) {
 			return &base.Response{StatusCode: base.StatusNotFound}, nil, err
@@ -151,7 +144,7 @@ func (s *rtspSession) onSetup(
 		return &base.Response{StatusCode: base.StatusBadRequest}, nil, err
 	}
 
-	s.path = path
+	s.pathID = *pathID
 
 	if trackID >= len(stream.tracks()) {
 		return &base.Response{
@@ -171,7 +164,7 @@ func (s *rtspSession) onPlay() (*base.Response, error) {
 	h := make(base.Header)
 
 	if s.ss.State() == gortsplib.ServerSessionStatePrePlay {
-		s.path.readerStart(s)
+		s.pathManager.pathReaderStart(s.pathID, s)
 
 		s.stateMutex.Lock()
 		s.state = gortsplib.ServerSessionStatePlay
@@ -186,9 +179,9 @@ func (s *rtspSession) onPlay() (*base.Response, error) {
 
 // onRecord is called by rtspServer.
 func (s *rtspSession) onRecord() (*base.Response, error) {
-	stream, err := s.path.publisherStart(s.announcedTracks)
+	stream, err := s.pathManager.pathPublisherStart(s.pathID, s.announcedTracks)
 	if err != nil {
-		return &base.Response{StatusCode: base.StatusBadRequest}, err
+		return &base.Response{StatusCode: base.StatusBadRequest}, fmt.Errorf("publisherStart: %w", err)
 	}
 
 	s.stream = stream

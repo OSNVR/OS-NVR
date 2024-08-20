@@ -7,17 +7,32 @@ import (
 	"time"
 
 	"nvr/pkg/log"
+	"nvr/pkg/video/gortsplib"
+	"nvr/pkg/video/hls"
 
 	"github.com/stretchr/testify/require"
 )
 
 type cancelFunc func()
 
+type stubHlsServer struct{}
+
+func (*stubHlsServer) setPathManager(*pathManager) {}
+
+func (*stubHlsServer) pathSourceReady(pathID, PathConf, log.Func, func(), gortsplib.Tracks) (*HLSMuxer, error) {
+	return nil, nil
+}
+func (*stubHlsServer) pathSourceNotReady(string) {}
+func (*stubHlsServer) MuxerByPathName(context.Context, string) (*hls.Muxer, error) {
+	return nil, nil
+}
+
 func newTestServer(t *testing.T) (*Server, cancelFunc) {
+	t.Helper()
 	wg := sync.WaitGroup{}
 
 	logger := log.NewDummyLogger()
-	pathManager := newPathManager(&wg, logger, nil)
+	pathManager := newPathManager(&wg, logger, &stubHlsServer{})
 
 	s := &Server{
 		rtspAddress: "127.0.0.1:8554",
@@ -37,10 +52,11 @@ func TestNewPath(t *testing.T) {
 	p, cancel := newTestServer(t)
 	defer cancel()
 
-	c := PathConf{MonitorID: "x"}
+	c, err := NewPathConf("x", false)
+	require.NoError(t, err)
 
 	ctx, cancel2 := context.WithCancel(context.Background())
-	actual, err := p.NewPath(ctx, "mypath", c)
+	actual, err := p.NewPath(ctx, "mypath", *c)
 	require.NoError(t, err)
 	actual.HLSMuxer = nil
 

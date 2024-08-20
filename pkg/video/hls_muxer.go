@@ -20,7 +20,9 @@ type muxerCloseFunc func(*HLSMuxer)
 type HLSMuxer struct {
 	wg              *sync.WaitGroup
 	readBufferCount int
-	path            *path
+	pathID          pathID
+	pathLogf        log.Func
+	pathCancelFunc  func()
 	pathConf        PathConf
 	muxerClose      muxerCloseFunc
 
@@ -38,7 +40,10 @@ func newHLSMuxer(
 	parentCtx context.Context,
 	readBufferCount int,
 	wg *sync.WaitGroup,
-	path *path,
+	pathID pathID,
+	pathConf PathConf,
+	pathLogf log.Func,
+	pathCancelFunc func(),
 	muxerClose muxerCloseFunc,
 ) *HLSMuxer {
 	ctx, ctxCancel := context.WithCancel(parentCtx)
@@ -46,8 +51,10 @@ func newHLSMuxer(
 	return &HLSMuxer{
 		readBufferCount: readBufferCount,
 		wg:              wg,
-		path:            path,
-		pathConf:        *path.conf,
+		pathID:          pathID,
+		pathConf:        pathConf,
+		pathLogf:        pathLogf,
+		pathCancelFunc:  pathCancelFunc,
 		muxerClose:      muxerClose,
 		ctx:             ctx,
 		ctxCancel:       ctxCancel,
@@ -60,7 +67,7 @@ func (m *HLSMuxer) close() {
 }
 
 func (m *HLSMuxer) logf(format string, a ...interface{}) {
-	m.path.logf(log.LevelError, "HLS: "+format, a...)
+	m.pathLogf(log.LevelError, "HLS: "+format, a...)
 }
 
 func (m *HLSMuxer) start(tracks gortsplib.Tracks) error {
@@ -103,7 +110,7 @@ func (m *HLSMuxer) run(tracks gortsplib.Tracks) error {
 			m.muxerClose(m)
 
 			// This will disconnect FFmpeg and restart the input process.
-			m.path.close()
+			m.pathCancelFunc()
 
 			m.ringBuffer.Close()
 		}
@@ -192,7 +199,7 @@ func (m *HLSMuxer) createMuxer(
 	audioTrack *gortsplib.TrackMPEG4Audio,
 ) *hls.Muxer {
 	muxerLogFunc := func(level log.Level, format string, a ...interface{}) {
-		m.path.logf(level, "HLS: "+format, a...)
+		m.pathLogf(level, "HLS: "+format, a...)
 	}
 
 	return hls.NewMuxer(

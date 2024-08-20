@@ -350,7 +350,7 @@ func stubNewVideoServerPath(
 	_ video.PathConf,
 ) (*video.ServerPath, error) {
 	if name == "" {
-		return nil, video.ErrEmptyPathName
+		return nil, video.ErrEmptyName
 	}
 	return &video.ServerPath{}, nil
 }
@@ -467,7 +467,7 @@ func TestRunInputProcess(t *testing.T) {
 		i := newTestInputProcess()
 		i.Config.v["id"] = ""
 		err := runInputProcess(context.Background(), i)
-		require.ErrorIs(t, err, video.ErrEmptyPathName)
+		require.ErrorIs(t, err, video.ErrEmptyMonitorID)
 	})
 }
 

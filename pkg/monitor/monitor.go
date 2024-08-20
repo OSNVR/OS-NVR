@@ -542,8 +542,11 @@ func runInputProcess(ctx context.Context, i *InputProcess) error {
 	i.cancel = cancel2
 	defer cancel2()
 
-	pathConf := video.PathConf{MonitorID: i.Config.ID(), IsSub: i.IsSubInput()}
-	serverPath, err := i.newVideoServerPath(processCTX, i.rtspPathName(), pathConf)
+	pathConf, err := video.NewPathConf(i.Config.ID(), i.IsSubInput())
+	if err != nil {
+		return fmt.Errorf("create path config: %w", err)
+	}
+	serverPath, err := i.newVideoServerPath(processCTX, i.rtspPathName(), *pathConf)
 	if err != nil {
 		return fmt.Errorf("add path to RTSP server: %w", err)
 	}

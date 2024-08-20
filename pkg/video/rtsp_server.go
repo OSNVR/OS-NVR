@@ -162,20 +162,15 @@ func (s *rtspServer) OnSessionOpen(
 	name string,
 ) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	pathLogf := s.pathManager.pathLogfByName(name)
-	id := s.newSessionID()
-
-	se := newRTSPSession(
-		id,
+	s.sessions[session] = newRTSPSession(
+		s.newSessionID(),
 		session,
 		conn,
 		s.pathManager,
-		pathLogf,
+		s.pathManager.pathLogfByName(name),
 	)
-
-	s.sessions[session] = se
-	s.mu.Unlock()
 }
 
 // OnSessionClose implements gortsplib.ServerHandler.
