@@ -56,7 +56,7 @@ func (s *hlsServer) start(ctx context.Context, address string) error {
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/hls/", s.HandleRequest())
+	mux.Handle("/hls/", s.HandleRequestNoCors())
 	server := http.Server{Handler: mux}
 
 	s.wg.Add(1)
@@ -91,7 +91,15 @@ func (s *hlsServer) genMuxerID() uint16 {
 	return id
 }
 
-func (s *hlsServer) HandleRequest() http.HandlerFunc {
+func (s *hlsServer) HandleRequestNoCors() http.HandlerFunc {
+	inner := s.HandleRequest()
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		inner.ServeHTTP(w, r)
+	}
+}
+
+func (s *hlsServer) HandleRequest() http.HandlerFunc { 
 	return func(w http.ResponseWriter, r *http.Request) {
 		// s.logf(log.LevelInfo, "[conn %v] %s %s", r.RemoteAddr, r.Method, r.URL.Path)
 
@@ -102,6 +110,7 @@ func (s *hlsServer) HandleRequest() http.HandlerFunc {
 		case http.MethodGet:
 
 		case http.MethodOptions:
+			// BREAKING: move this to `HandleRequestNoCors`.
 			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
 			w.WriteHeader(http.StatusOK)
