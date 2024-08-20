@@ -99,7 +99,7 @@ func (s *hlsServer) HandleRequestNoCors() http.HandlerFunc {
 	}
 }
 
-func (s *hlsServer) HandleRequest() http.HandlerFunc { 
+func (s *hlsServer) HandleRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// s.logf(log.LevelInfo, "[conn %v] %s %s", r.RemoteAddr, r.Method, r.URL.Path)
 

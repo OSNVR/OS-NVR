@@ -20,6 +20,13 @@ func init() {
 const defaultInterval = 15 * time.Second
 
 func onInputProcessStart(ctx context.Context, i *monitor.InputProcess, _ *[]string) {
+	// Grace period.
+	select {
+	case <-time.After(15 * time.Second):
+	case <-ctx.Done():
+		return
+	}
+
 	monitorID := i.Config.ID()
 	processName := i.ProcessName()
 
