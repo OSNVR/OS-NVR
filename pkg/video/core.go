@@ -73,7 +73,7 @@ func (s *Server) Start(ctx context.Context) error {
 type CancelFunc func()
 
 // HlsMuxerFunc .
-type HlsMuxerFunc func(context.Context) (IHLSMuxer, error)
+type HlsMuxerFunc func() (IHLSMuxer, error)
 
 // IHLSMuxer HLS muxer interface.
 type IHLSMuxer interface {

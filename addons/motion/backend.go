@@ -12,6 +12,7 @@ import (
 	"nvr/pkg/log"
 	"nvr/pkg/monitor"
 	"nvr/pkg/storage"
+	"nvr/pkg/video/gortsplib"
 	"nvr/pkg/video/gortsplib/pkg/h264"
 	"os/exec"
 	"strconv"
@@ -99,9 +100,20 @@ func run(
 	config config,
 	logf log.Func,
 ) error {
-	videoTrack, err := i.VideoTrack(ctx)
-	if err != nil {
-		return fmt.Errorf("get video track: %w", err)
+	var err error
+	var videoTrack *gortsplib.TrackH264
+	for {
+		videoTrack, err = i.VideoTrack()
+		if err != nil {
+			logf(log.LevelWarning, "get video track: %v", err)
+		} else {
+			break
+		}
+		select {
+		case <-time.After(3 * time.Second):
+		case <-ctx.Done():
+			return context.Canceled
+		}
 	}
 
 	var spsp h264.SPS

@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"nvr/pkg/video/data"
 	"nvr/pkg/video/gortsplib"
 	"nvr/pkg/video/gortsplib/pkg/h264"
 	"nvr/pkg/video/gortsplib/pkg/rtph264"
 	"nvr/pkg/video/gortsplib/pkg/rtpmpeg4audio"
+	"nvr/pkg/video/hls"
 
 	"github.com/pion/rtp"
 )
 
 type streamTrack interface {
-	onData(data) error
+	onData(data.Data) error
 }
 
 func newStreamTrack(track gortsplib.Track) streamTrack {
@@ -31,11 +33,11 @@ func newStreamTrack(track gortsplib.Track) streamTrack {
 
 type stream struct {
 	rtspStream   *gortsplib.ServerStream
-	hlsMuxer     *HLSMuxer
+	hlsMuxer     *hls.Muxer
 	streamTracks []streamTrack
 }
 
-func newStream(tracks gortsplib.Tracks, hlsMuxer *HLSMuxer) *stream {
+func newStream(tracks gortsplib.Tracks, hlsMuxer *hls.Muxer) *stream {
 	s := &stream{
 		rtspStream: gortsplib.NewServerStream(tracks),
 		hlsMuxer:   hlsMuxer,
@@ -52,27 +54,26 @@ func newStream(tracks gortsplib.Tracks, hlsMuxer *HLSMuxer) *stream {
 
 func (s *stream) close() {
 	s.rtspStream.Close()
+	s.hlsMuxer.Cancel()
 }
 
 func (s *stream) tracks() gortsplib.Tracks {
 	return s.rtspStream.Tracks()
 }
 
-func (s *stream) writeData(data data) error {
-	err := s.streamTracks[data.getTrackID()].onData(data)
+func (s *stream) writeData(d data.Data) error {
+	err := s.streamTracks[d.GetTrackID()].onData(d)
 	if err != nil {
 		return fmt.Errorf("on data: %w", err)
 	}
 
 	// Forward to rtsp stream.
-	for _, pkt := range data.getRTPPackets() {
-		s.rtspStream.WritePacketRTPWithNTP(data.getTrackID(), pkt, data.getNTP())
+	for _, pkt := range d.GetRTPPackets() {
+		s.rtspStream.WritePacketRTPWithNTP(d.GetTrackID(), pkt, d.GetNTP())
 	}
 
 	// Forward to hls muxer.
-	s.hlsMuxer.readerData(data)
-
-	return nil
+	return s.hlsMuxer.WriteData(d)
 }
 
 const (
@@ -229,27 +230,27 @@ func (t *streamTrackH264) remuxNALUs(nalus [][]byte) [][]byte {
 	return filteredNALUs
 }
 
-func (t *streamTrackH264) generateRTPPackets(tdata *dataH264) error {
-	pkts, err := t.encoder.Encode(tdata.nalus, tdata.pts)
+func (t *streamTrackH264) generateRTPPackets(tdata *data.H264) error {
+	pkts, err := t.encoder.Encode(tdata.Nalus, tdata.Pts)
 	if err != nil {
 		return fmt.Errorf("encode: %w", err)
 	}
 
-	tdata.rtpPackets = pkts
+	tdata.RTPPackets = pkts
 	return nil
 }
 
-func (t *streamTrackH264) onData(dat data) error {
-	tdata := dat.(*dataH264) //nolint:forcetypeassert
+func (t *streamTrackH264) onData(dat data.Data) error {
+	tdata := dat.(*data.H264) //nolint:forcetypeassert
 
-	if tdata.rtpPackets == nil {
-		t.updateTrackParametersFromNALUs(tdata.nalus)
-		tdata.nalus = t.remuxNALUs(tdata.nalus)
+	if tdata.RTPPackets == nil {
+		t.updateTrackParametersFromNALUs(tdata.Nalus)
+		tdata.Nalus = t.remuxNALUs(tdata.Nalus)
 
 		return t.generateRTPPackets(tdata)
 	}
 
-	pkt := tdata.rtpPackets[0]
+	pkt := tdata.RTPPackets[0]
 	t.updateTrackParametersFromRTPPacket(pkt)
 
 	if t.encoder == nil {
@@ -282,10 +283,10 @@ func (t *streamTrackH264) onData(dat data) error {
 		return fmt.Errorf("decode: %w", err)
 	}
 
-	tdata.nalus = nalus
-	tdata.pts = pts
+	tdata.Nalus = nalus
+	tdata.Pts = pts
 
-	tdata.nalus = t.remuxNALUs(tdata.nalus)
+	tdata.Nalus = t.remuxNALUs(tdata.Nalus)
 
 	// route packet as is
 	if t.encoder == nil {
@@ -309,13 +310,13 @@ func newStreamTrackMPEG4Audio(track *gortsplib.TrackMPEG4Audio) *streamTrackMPEG
 	}
 }
 
-func (t *streamTrackMPEG4Audio) generateRTPPackets(tdata *dataMPEG4Audio) error {
-	pkts, err := t.encoder.Encode(tdata.aus, tdata.pts)
+func (t *streamTrackMPEG4Audio) generateRTPPackets(tdata *data.MPEG4Audio) error {
+	pkts, err := t.encoder.Encode(tdata.Aus, tdata.Pts)
 	if err != nil {
 		return err
 	}
 
-	tdata.rtpPackets = pkts
+	tdata.RTPPackets = pkts
 	return nil
 }
 
@@ -329,14 +330,14 @@ func (e PayloadTooBigError) Error() string {
 		e.size, maxPacketSize)
 }
 
-func (t *streamTrackMPEG4Audio) onData(dat data) error {
-	tdata := dat.(*dataMPEG4Audio) //nolint:forcetypeassert
+func (t *streamTrackMPEG4Audio) onData(dat data.Data) error {
+	tdata := dat.(*data.MPEG4Audio) //nolint:forcetypeassert
 
-	if tdata.rtpPackets == nil {
+	if tdata.RTPPackets == nil {
 		return t.generateRTPPackets(tdata)
 	}
 
-	pkt := tdata.rtpPackets[0]
+	pkt := tdata.RTPPackets[0]
 
 	// remove padding
 	pkt.Header.Padding = false
@@ -354,8 +355,8 @@ func (t *streamTrackMPEG4Audio) onData(dat data) error {
 		return err
 	}
 
-	tdata.aus = aus
-	tdata.pts = pts
+	tdata.Aus = aus
+	tdata.Pts = pts
 
 	return nil
 }

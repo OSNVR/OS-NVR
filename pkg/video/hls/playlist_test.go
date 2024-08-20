@@ -1,17 +1,13 @@
 package hls
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestNextSegment(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	playlist := newPlaylist(ctx, 0, 3)
+	playlist := newPlaylist(0, 3)
 
 	seg5 := &SegmentFinalized{ID: 5}
 	seg6 := &SegmentFinalized{ID: 6}

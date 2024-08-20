@@ -34,7 +34,7 @@ func onInputProcessStart(ctx context.Context, i *monitor.InputProcess, _ *[]stri
 	}
 
 	muxer := func(ctx context.Context) (muxer, error) {
-		return i.HLSMuxer(ctx)
+		return i.HLSMuxer()
 	}
 
 	d := &watchdog{

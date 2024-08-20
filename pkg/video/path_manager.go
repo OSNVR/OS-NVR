@@ -13,9 +13,9 @@ import (
 )
 
 type pathManagerHLSServer interface {
-	pathSourceReady(pathID, PathConf, log.Func, func(), gortsplib.Tracks) (*HLSMuxer, error)
-	pathSourceNotReady(pathName string)
-	MuxerByPathName(context.Context, string) (*hls.Muxer, error)
+	muxerCreate(pathID, log.Func, gortsplib.Tracks) (*hls.Muxer, error)
+	muxerDestroy(pathID)
+	muxerByPathName(string) (*hls.Muxer, error)
 }
 
 type pathManager struct {
@@ -75,7 +75,6 @@ func isValidPathName(name string) error {
 	return nil
 }
 
-// AddPath add path to pathManager.
 func (pm *pathManager) AddPath(ctx context.Context, name string, conf PathConf) (HlsMuxerFunc, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -101,53 +100,19 @@ func (pm *pathManager) AddPath(ctx context.Context, name string, conf PathConf) 
 	}
 	pm.paths[name] = pa
 
-	hlsMuxer := func(ctx context.Context) (IHLSMuxer, error) {
-		return pm.hlsServer.MuxerByPathName(ctx, name)
+	hlsMuxer := func() (IHLSMuxer, error) {
+		return pm.hlsServer.muxerByPathName(name)
 	}
 
 	pathID := pa.ID()
 	pm.wg.Add(1)
 	go func() {
-		// Remove path.
+		// Cancellation.
 		<-ctx.Done()
-		pm.closeAndRemove(pathID)
+		pm.pathCloseAndRemove(pathID)
 	}()
 
 	return hlsMuxer, nil
-}
-
-func (pm *pathManager) closeAndRemove(pathID pathID) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	// Make sure this path haven't already been removed.
-	path, exist := pm.paths[pathID.name]
-	if !exist || path.id != pathID.id {
-		return
-	}
-
-	delete(pm.paths, pathID.name)
-
-	if path.sourceReady {
-		go pm.hlsServer.pathSourceNotReady(path.name)
-		path.sourceReady = false
-	}
-	if path.source != nil {
-		path.source.close()
-	}
-
-	// Close source before stream.
-	if path.stream != nil {
-		path.stream.close()
-		path.stream = nil
-	}
-
-	for r := range path.readers {
-		r.close()
-		delete(path.readers, r)
-	}
-
-	pm.wg.Done()
 }
 
 // Testing.
@@ -168,15 +133,11 @@ func (pm *pathManager) onDescribe(
 
 	path, exist := pm.paths[pathName]
 	if !exist {
-		return &base.Response{
-			StatusCode: base.StatusNotFound,
-		}, nil, ErrPathNotExist
+		return &base.Response{StatusCode: base.StatusNotFound}, nil, ErrPathNotExist
 	}
 
-	if !path.sourceReady {
-		return &base.Response{
-			StatusCode: base.StatusNotFound,
-		}, nil, ErrPathNoOnePublishing
+	if !path.rtspSourceReady {
+		return &base.Response{StatusCode: base.StatusNotFound}, nil, ErrPathNoOnePublishing
 	}
 	return &base.Response{StatusCode: base.StatusOK}, path.stream.rtspStream, nil
 }
@@ -197,15 +158,12 @@ func (pm *pathManager) pathPublisherAdd(
 		return nil, ErrPathNotExist
 	}
 
-	if path.source != nil {
+	if path.rtspSource != nil {
 		return nil, ErrPathBusy
 	}
-	path.source = session
+	path.rtspSource = session
 
-	return &pathID{
-		id:   path.id,
-		name: path.name,
-	}, nil
+	return &pathID{id: path.id, name: path.name}, nil
 }
 
 // pathReaderAdd is called by a rtsp reader.
@@ -221,27 +179,23 @@ func (pm *pathManager) pathReaderAdd(
 		return nil, nil, ErrPathNotExist
 	}
 
-	if path.sourceReady {
-		path.readers[session] = struct{}{}
-		pathID := &pathID{
-			id:   path.id,
-			name: path.name,
-		}
-		return pathID, path.stream, nil
+	if !path.rtspSourceReady {
+		return nil, nil, fmt.Errorf("%w: (%s)", ErrPathNoOnePublishing, path.name)
 	}
 
-	return nil, nil, fmt.Errorf("%w: (%s)", ErrPathNoOnePublishing, path.name)
+	path.readers[session] = struct{}{}
+	return &pathID{id: path.id, name: path.name}, path.stream, nil
 }
 
-func (pm *pathManager) pathLogfByName(name string) log.Func {
+func (pm *pathManager) pathLogfByName(name string) (log.Func, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	path, exist := pm.paths[name]
+	pa, exist := pm.paths[name]
 	if !exist {
-		return nil
+		return nil, ErrPathNotExist
 	}
-	return newPathLogf(pm.logger, path)
+	return newPathLogf(pm.logger, pa), nil
 }
 
 func (pm *pathManager) genPathID() uint32 {
@@ -268,30 +222,32 @@ func (pm *pathManager) pathPublisherStart(pathID pathID, tracks gortsplib.Tracks
 		return nil, ErrPathNotExist
 	}
 
-	hlsMuxer, err := pm.hlsServer.pathSourceReady(pathID, path.conf, newPathLogf(pm.logger, path), path.cancelFunc, tracks)
+	hlsMuxer, err := pm.hlsServer.muxerCreate(pathID, newPathLogf(pm.logger, path), tracks)
 	if err != nil {
 		return nil, err
 	}
 
 	path.stream = newStream(tracks, hlsMuxer)
-	path.sourceReady = true
+	path.rtspSourceReady = true
 
 	return path.stream, err
 }
 
 func newPathLogf(logger log.ILogger, pa *path) log.Func {
+	processName := func() string {
+		if pa.conf.isSub {
+			return "sub"
+		}
+		return "main"
+	}()
+	monitorID := pa.conf.monitorID
+
 	return func(level log.Level, format string, a ...interface{}) {
-		processName := func() string {
-			if pa.conf.isSub {
-				return "sub"
-			}
-			return "main"
-		}()
 		msg := fmt.Sprintf("%v: %v", processName, fmt.Sprintf(format, a...))
 		logger.Log(log.Entry{
 			Level:     level,
 			Src:       "monitor",
-			MonitorID: pa.conf.monitorID,
+			MonitorID: monitorID,
 			Msg:       msg,
 		})
 	}
@@ -311,20 +267,50 @@ func (pm *pathManager) pathReaderRemove(pathID pathID, session *rtspSession) {
 }
 
 // pathReaderStart is called by a rtsp session.
-func (pm *pathManager) pathReaderStart(pathID pathID, session *rtspSession) {
+func (pm *pathManager) pathReaderStart(pathID pathID, session *rtspSession) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	path, exist := pm.paths[pathID.name]
 	if !exist || path.id != pathID.id {
-		return
+		return ErrPathNotExist
 	}
 
 	path.readers[session] = struct{}{}
+	return nil
 }
 
-func (pm *pathManager) pathClose(pathID pathID) {
-	pm.closeAndRemove(pathID)
+func (pm *pathManager) pathCloseAndRemove(pathID pathID) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Make sure this path haven't already been removed.
+	path, exist := pm.paths[pathID.name]
+	if !exist || path.id != pathID.id {
+		return
+	}
+
+	delete(pm.paths, pathID.name)
+
+	path.rtspSourceReady = false
+	if path.rtspSource != nil {
+		path.rtspSource.close()
+	}
+
+	// Close source before stream.
+	if path.stream != nil {
+		path.stream.close()
+		path.stream = nil
+	}
+
+	for r := range path.readers {
+		r.close()
+		delete(path.readers, r)
+	}
+
+	pm.hlsServer.muxerDestroy(pathID)
+
+	pm.wg.Done()
 }
 
 type path struct {
@@ -333,10 +319,10 @@ type path struct {
 	conf       PathConf
 	cancelFunc func()
 
-	source      *rtspSession
-	sourceReady bool
-	stream      *stream
-	readers     map[*rtspSession]struct{}
+	rtspSource      *rtspSession
+	rtspSourceReady bool
+	stream          *stream
+	readers         map[*rtspSession]struct{}
 }
 
 func (pa *path) ID() pathID {

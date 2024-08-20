@@ -20,16 +20,12 @@ type hlsServer struct {
 	readBufferCount int
 	logger          *log.Logger
 
-	ctx    context.Context
-	wg     *sync.WaitGroup
-	muxers map[string]*HLSMuxer
-
-	// in
-	chPathSourceReady    chan pathSourceReadyRequest
-	chPathSourceNotReady chan string
-	chRequest            chan *hlsMuxerRequest
-	chMuxerbyPathName    chan muxerByPathNameRequest
-	chMuxerClose         chan *HLSMuxer
+	mu          sync.Mutex
+	cancelled   bool
+	ctx         context.Context
+	wg          *sync.WaitGroup
+	muxers      map[string]*hls.Muxer
+	nextMuxerID uint16
 }
 
 func newHLSServer(
@@ -38,15 +34,11 @@ func newHLSServer(
 	logger *log.Logger,
 ) *hlsServer {
 	return &hlsServer{
-		readBufferCount:      readBufferCount,
-		logger:               logger,
-		wg:                   wg,
-		muxers:               make(map[string]*HLSMuxer),
-		chPathSourceReady:    make(chan pathSourceReadyRequest),
-		chPathSourceNotReady: make(chan string),
-		chRequest:            make(chan *hlsMuxerRequest),
-		chMuxerbyPathName:    make(chan muxerByPathNameRequest),
-		chMuxerClose:         make(chan *HLSMuxer),
+		readBufferCount: readBufferCount,
+		logger:          logger,
+		mu:              sync.Mutex{},
+		wg:              wg,
+		muxers:          make(map[string]*hls.Muxer),
 	}
 }
 
@@ -63,18 +55,11 @@ func (s *hlsServer) start(ctx context.Context, address string) error {
 		Msg:   fmt.Sprintf("HLS: listener opened on %v", address),
 	})
 
-	s.wg.Add(2)
-	s.startServer(ln)
-	go s.run()
-
-	return nil
-}
-
-func (s *hlsServer) startServer(ln net.Listener) {
 	mux := http.NewServeMux()
 	mux.Handle("/hls/", s.HandleRequest())
 	server := http.Server{Handler: mux}
 
+	s.wg.Add(1)
 	go func() {
 		for {
 			err := server.Serve(ln)
@@ -91,81 +76,22 @@ func (s *hlsServer) startServer(ln net.Listener) {
 			}
 		}
 	}()
-
 	go func() {
 		<-s.ctx.Done()
 		server.Close()
 		s.wg.Done()
 	}()
+
+	return nil
 }
 
-// ErrMuxerAleadyExists muxer already exists.
-var ErrMuxerAleadyExists = errors.New("muxer already exists")
-
-func (s *hlsServer) run() {
-	defer s.wg.Done()
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-
-		case req := <-s.chPathSourceReady:
-			if _, exist := s.muxers[req.pathID.name]; exist {
-				req.res <- pathSourceReadyResponse{err: ErrMuxerAleadyExists}
-			}
-
-			m := newHLSMuxer(
-				s.ctx,
-				s.readBufferCount,
-				s.wg,
-				req.pathID,
-				req.pathConf,
-				req.pathLogf,
-				req.cancelFunc,
-				s.muxerClose,
-			)
-
-			if err := m.start(req.tracks); err != nil {
-				req.res <- pathSourceReadyResponse{
-					err: fmt.Errorf("start hls muxer: %w", err),
-				}
-				continue
-			}
-			s.muxers[req.pathID.name] = m
-			req.res <- pathSourceReadyResponse{muxer: m}
-
-		case pathName := <-s.chPathSourceNotReady:
-			if c, exist := s.muxers[pathName]; exist {
-				c.close()
-				delete(s.muxers, pathName)
-			}
-
-		case req := <-s.chRequest:
-			m, exist := s.muxers[req.path]
-			if exist {
-				m.onRequest(req)
-				continue
-			}
-			req.res <- hls.MuxerFileResponse{Status: http.StatusNotFound}
-
-		case req := <-s.chMuxerbyPathName:
-			m, exist := s.muxers[req.pathName]
-			if exist {
-				req.res <- m
-				continue
-			}
-			req.res <- nil
-
-		case c := <-s.chMuxerClose:
-			_, exist := s.muxers[c.pathID.name]
-			if exist {
-				delete(s.muxers, c.pathID.name)
-			}
-		}
-	}
+func (s *hlsServer) genMuxerID() uint16 {
+	id := s.nextMuxerID
+	s.nextMuxerID++
+	return id
 }
 
-func (s *hlsServer) HandleRequest() http.HandlerFunc { //nolint:funlen
+func (s *hlsServer) HandleRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// s.logf(log.LevelInfo, "[conn %v] %s %s", r.RemoteAddr, r.Method, r.URL.Path)
 
@@ -210,109 +136,103 @@ func (s *hlsServer) HandleRequest() http.HandlerFunc { //nolint:funlen
 
 		dir = strings.TrimSuffix(dir, "/")
 
-		cres := make(chan hls.MuxerFileResponse)
-		hreq := &hlsMuxerRequest{
-			path: dir,
-			file: fname,
-			req:  r,
-			res:  cres,
+		res := s.onRequest(dir, fname, r)
+
+		for k, v := range res.Header {
+			w.Header().Set(k, v)
 		}
+		w.WriteHeader(res.Status)
 
-		select {
-		case <-s.ctx.Done():
-		case s.chRequest <- hreq:
-			res := <-cres
-
-			for k, v := range res.Header {
-				w.Header().Set(k, v)
-			}
-			w.WriteHeader(res.Status)
-
-			if res.Body != nil {
-				io.Copy(w, res.Body) //nolint:errcheck
-			}
+		if res.Body != nil {
+			io.Copy(w, res.Body) //nolint:errcheck
 		}
 	}
 }
 
-type pathSourceReadyRequest struct {
-	pathID     pathID
-	pathConf   PathConf
-	pathLogf   log.Func
-	cancelFunc func()
-	tracks     gortsplib.Tracks
-	res        chan pathSourceReadyResponse
+func (s *hlsServer) onRequest(path string, file string, r *http.Request) hls.MuxerFileResponse {
+	s.mu.Lock()
+	if s.cancelled {
+		s.mu.Unlock()
+		return hls.MuxerFileReponseCancelled()
+	}
+	m, exist := s.muxers[path]
+	if !exist {
+		s.mu.Unlock()
+		return hls.MuxerFileResponse{Status: http.StatusNotFound}
+	}
+	s.mu.Unlock() // Must be unlocked here.
+
+	return m.OnRequest(file, r.URL.Query())
 }
 
-type pathSourceReadyResponse struct {
-	muxer *HLSMuxer
-	err   error
-}
+var ErrMuxerAleadyExists = errors.New("muxer already exists")
 
-// pathSourceReady is called by path manager.
-func (s *hlsServer) pathSourceReady(
+const (
+	hlsSegmentCount    = 3
+	hlsSegmentDuration = 900 * time.Millisecond
+	hlsPartDuration    = 300 * time.Millisecond
+)
+
+var (
+	mb                = uint64(1000000)
+	hlsSegmentMaxSize = 50 * mb
+)
+
+func (s *hlsServer) muxerCreate(
 	pathID pathID,
-	pathConf PathConf,
 	pathLogf log.Func,
-	cancelFunc func(),
 	tracks gortsplib.Tracks,
-) (*HLSMuxer, error) {
-	pathSourceRes := make(chan pathSourceReadyResponse)
-	pathSourceReq := pathSourceReadyRequest{
-		pathID:     pathID,
-		pathConf:   pathConf,
-		pathLogf:   pathLogf,
-		cancelFunc: cancelFunc,
-		tracks:     tracks,
-		res:        pathSourceRes,
-	}
-	select {
-	case s.chPathSourceReady <- pathSourceReq:
-		res := <-pathSourceRes
-		return res.muxer, res.err
-	case <-s.ctx.Done():
+) (*hls.Muxer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelled {
 		return nil, context.Canceled
 	}
+
+	if _, exist := s.muxers[pathID.name]; exist {
+		return nil, ErrMuxerAleadyExists
+	}
+
+	m, err := hls.NewMuxer(
+		s.genMuxerID(),
+		hlsSegmentCount,
+		hlsSegmentDuration,
+		hlsPartDuration,
+		hlsSegmentMaxSize,
+		pathLogf,
+		tracks,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("new hls muxer: %w", err)
+	}
+
+	s.muxers[pathID.name] = m
+	return m, nil
 }
 
-// pathSourceNotReady is called by pathManager.
-func (s *hlsServer) pathSourceNotReady(pathName string) {
-	select {
-	case s.chPathSourceNotReady <- pathName:
-	case <-s.ctx.Done():
+func (s *hlsServer) muxerDestroy(pathID pathID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelled {
+		return
+	}
+
+	if m, exist := s.muxers[pathID.name]; exist {
+		m.Cancel()
+		delete(s.muxers, pathID.name)
 	}
 }
 
-// muxerClose is called by hlsMuxer.
-func (s *hlsServer) muxerClose(c *HLSMuxer) {
-	select {
-	case s.chMuxerClose <- c:
-	case <-s.ctx.Done():
-	}
-}
-
-type muxerByPathNameRequest struct {
-	pathName string
-	res      chan *HLSMuxer
-}
-
-// MuxerByPathName .
-func (s *hlsServer) MuxerByPathName(ctx context.Context, pathName string) (*hls.Muxer, error) {
-	muxerByPathNameRes := make(chan *HLSMuxer)
-	muxerByPathNameReq := muxerByPathNameRequest{
-		pathName: pathName,
-		res:      muxerByPathNameRes,
-	}
-	select {
-	case <-ctx.Done():
+func (s *hlsServer) muxerByPathName(pathName string) (*hls.Muxer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelled {
 		return nil, context.Canceled
-	case <-s.ctx.Done():
-		return nil, context.Canceled
-	case s.chMuxerbyPathName <- muxerByPathNameReq:
-		res := <-muxerByPathNameRes
-		if res == nil || res.muxer == nil {
-			return nil, context.Canceled
-		}
-		return res.muxer, nil
 	}
+
+	m, exist := s.muxers[pathName]
+	if !exist {
+		return nil, context.Canceled
+	}
+	return m, nil
 }

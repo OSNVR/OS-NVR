@@ -173,7 +173,7 @@ func runRecording(ctx context.Context, r *Recorder) error {
 		return fmt.Errorf("parse timestamp offset %w", err)
 	}
 
-	muxer, err := r.input.HLSMuxer(ctx)
+	muxer, err := r.input.HLSMuxer()
 	if err != nil {
 		return fmt.Errorf("get muxer: %w", err)
 	}

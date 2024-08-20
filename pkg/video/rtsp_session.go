@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"nvr/pkg/log"
+	"nvr/pkg/video/data"
 	"nvr/pkg/video/gortsplib"
 	"nvr/pkg/video/gortsplib/pkg/base"
 	"sync"
@@ -78,7 +79,7 @@ func (s *rtspSession) onClose(err error) {
 		s.pathManager.pathReaderRemove(s.pathID, s)
 
 	case gortsplib.ServerSessionStatePreRecord, gortsplib.ServerSessionStateRecord:
-		s.pathManager.pathClose(s.pathID)
+		s.pathManager.pathCloseAndRemove(s.pathID)
 	}
 
 	if s.pathLogf != nil {
@@ -164,7 +165,10 @@ func (s *rtspSession) onPlay() (*base.Response, error) {
 	h := make(base.Header)
 
 	if s.ss.State() == gortsplib.ServerSessionStatePrePlay {
-		s.pathManager.pathReaderStart(s.pathID, s)
+		err := s.pathManager.pathReaderStart(s.pathID, s)
+		if err != nil {
+			return &base.Response{StatusCode: base.StatusBadRequest}, err
+		}
 
 		s.stateMutex.Lock()
 		s.state = gortsplib.ServerSessionStatePlay
@@ -201,17 +205,17 @@ func (s *rtspSession) onPacketRTP(trackID int, packet *rtp.Packet) {
 
 	switch s.announcedTracks[trackID].(type) {
 	case *gortsplib.TrackH264:
-		err = s.stream.writeData(&dataH264{
-			trackID:    trackID,
-			rtpPackets: []*rtp.Packet{packet},
-			ntp:        time.Now(),
+		err = s.stream.writeData(&data.H264{
+			TrackID:    trackID,
+			RTPPackets: []*rtp.Packet{packet},
+			Ntp:        time.Now(),
 		})
 
 	case *gortsplib.TrackMPEG4Audio:
-		err = s.stream.writeData(&dataMPEG4Audio{
-			trackID:    trackID,
-			rtpPackets: []*rtp.Packet{packet},
-			ntp:        time.Now(),
+		err = s.stream.writeData(&data.MPEG4Audio{
+			TrackID:    trackID,
+			RTPPackets: []*rtp.Packet{packet},
+			Ntp:        time.Now(),
 		})
 	}
 

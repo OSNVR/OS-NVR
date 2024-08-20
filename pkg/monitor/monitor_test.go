@@ -523,7 +523,7 @@ func TestInputVideoTrack(t *testing.T) {
 				HLSMuxer: muxer,
 			},
 		}
-		actual, err := i.VideoTrack(context.Background())
+		actual, err := i.VideoTrack()
 		require.NoError(t, err)
 		require.Equal(t, mockVideoTrack, actual)
 	})
@@ -537,7 +537,7 @@ func TestInputVideoTrack(t *testing.T) {
 				HLSMuxer: muxer,
 			},
 		}
-		actual, err := i.VideoTrack(context.Background())
+		actual, err := i.VideoTrack()
 		require.ErrorIs(t, err, mockError)
 		require.Nil(t, actual)
 	})
@@ -553,7 +553,7 @@ func TestInputAudioTrack(t *testing.T) {
 			HLSMuxer: muxer,
 		},
 	}
-	actual, err := i.AudioTrack(context.Background())
+	actual, err := i.AudioTrack()
 	require.NoError(t, err)
 	require.Equal(t, mockAudioTrack, actual)
 }

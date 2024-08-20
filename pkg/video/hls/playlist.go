@@ -91,8 +91,8 @@ type playlist struct {
 	nextSegmentsOnHold map[nextSegmentRequest]struct{}
 }
 
-func newPlaylist(ctx context.Context, muxerID uint16, segmentCount int) *playlist {
-	p := &playlist{
+func newPlaylist(muxerID uint16, segmentCount int) *playlist {
+	return &playlist{
 		mu:             sync.Mutex{},
 		muxerID:        muxerID,
 		segmentCount:   segmentCount,
@@ -104,28 +104,28 @@ func newPlaylist(ctx context.Context, muxerID uint16, segmentCount int) *playlis
 		segFinalOnHold:     make(map[chan struct{}]struct{}),
 		nextSegmentsOnHold: make(map[nextSegmentRequest]struct{}),
 	}
+}
 
-	go func() {
-		// Cancellation.
-		<-ctx.Done()
-		p.mu.Lock()
-		for req := range p.playlistsOnHold {
-			close(req.res)
-		}
-		for req := range p.partsOnHold {
-			close(req.res)
-		}
-		for done := range p.segFinalOnHold {
-			close(done)
-		}
-		for req := range p.nextSegmentsOnHold {
-			close(req.res)
-		}
-		p.cancelled = true
-		p.mu.Unlock()
-	}()
+func (p *playlist) cancel() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cancelled {
+		return
+	}
 
-	return p
+	for req := range p.playlistsOnHold {
+		close(req.res)
+	}
+	for req := range p.partsOnHold {
+		close(req.res)
+	}
+	for done := range p.segFinalOnHold {
+		close(done)
+	}
+	for req := range p.nextSegmentsOnHold {
+		close(req.res)
+	}
+	p.cancelled = true
 }
 
 func (p *playlist) checkPending() {
@@ -227,6 +227,34 @@ type blockingPlaylistRequest struct {
 }
 
 func (p *playlist) blockingPlaylist(isDeltaUpdate bool, msnint uint64, partint uint64) MuxerFileResponse {
+	p.mu.Lock()
+	if p.cancelled {
+		p.mu.Unlock()
+		return MuxerFileReponseCancelled()
+	}
+
+	// If the _HLS_msn is greater than the Media Sequence Number of the last
+	// Media Segment in the current Playlist plus two, or if the _HLS_part
+	// exceeds the last Partial Segment in the current Playlist by the
+	// Advance Part Limit, then the server SHOULD immediately return Bad
+	// Request, such as HTTP 400.
+	if msnint > (p.nextSegmentID + 1) {
+		p.mu.Unlock()
+		return MuxerFileResponse{Status: http.StatusBadRequest}
+	}
+
+	if p.hasContent() && p.hasPart(msnint, partint) {
+		res := MuxerFileResponse{
+			Status: http.StatusOK,
+			Header: map[string]string{
+				"Content-Type": `audio/mpegURL`,
+			},
+			Body: bytes.NewReader(p.fullPlaylist(isDeltaUpdate)),
+		}
+		p.mu.Unlock()
+		return res
+	}
+
 	res := make(chan MuxerFileResponse)
 	req := blockingPlaylistRequest{
 		isDeltaUpdate: isDeltaUpdate,
@@ -235,39 +263,12 @@ func (p *playlist) blockingPlaylist(isDeltaUpdate bool, msnint uint64, partint u
 		res:           res,
 	}
 
-	p.mu.Lock()
-	if p.cancelled {
-		p.mu.Unlock()
-		return muxerFileReponseCancelled()
-	}
-	// If the _HLS_msn is greater than the Media Sequence Number of the last
-	// Media Segment in the current Playlist plus two, or if the _HLS_part
-	// exceeds the last Partial Segment in the current Playlist by the
-	// Advance Part Limit, then the server SHOULD immediately return Bad
-	// Request, such as HTTP 400.
-	if req.msnint > (p.nextSegmentID + 1) {
-		p.mu.Unlock()
-		return MuxerFileResponse{Status: http.StatusBadRequest}
-	}
-
-	if p.hasContent() && p.hasPart(req.msnint, req.partint) {
-		res := MuxerFileResponse{
-			Status: http.StatusOK,
-			Header: map[string]string{
-				"Content-Type": `audio/mpegURL`,
-			},
-			Body: bytes.NewReader(p.fullPlaylist(req.isDeltaUpdate)),
-		}
-		p.mu.Unlock()
-		return res
-	}
-
 	p.playlistsOnHold[req] = struct{}{}
-	p.mu.Unlock() // Must unlock here.
+	p.mu.Unlock() // Must be unlocked here.
 
 	res2, ok := <-res
 	if !ok {
-		return muxerFileReponseCancelled()
+		return MuxerFileReponseCancelled()
 	}
 	return res2
 }
@@ -306,7 +307,7 @@ func (p *playlist) playlistReader(msn, part, skip string) MuxerFileResponse {
 	defer p.mu.Unlock()
 
 	if p.cancelled {
-		return muxerFileReponseCancelled()
+		return MuxerFileReponseCancelled()
 	}
 
 	if !p.hasContent() {
@@ -472,7 +473,7 @@ func (p *playlist) blockingPart(name string) MuxerFileResponse {
 	p.mu.Lock()
 	if p.cancelled {
 		p.mu.Unlock()
-		return muxerFileReponseCancelled()
+		return MuxerFileReponseCancelled()
 	}
 
 	base := strings.TrimSuffix(req.partName, ".mp4")
@@ -500,7 +501,7 @@ func (p *playlist) blockingPart(name string) MuxerFileResponse {
 	p.mu.Unlock() // Must be unlocked here.
 	res2, ok := <-res
 	if !ok {
-		return muxerFileReponseCancelled()
+		return MuxerFileReponseCancelled()
 	}
 	return res2
 }
@@ -508,14 +509,13 @@ func (p *playlist) blockingPart(name string) MuxerFileResponse {
 func (p *playlist) segmentReader(fname string) MuxerFileResponse {
 	switch {
 	case strings.HasPrefix(fname, "seg"):
-		base := strings.TrimSuffix(fname, ".mp4")
-
 		p.mu.Lock()
 		defer p.mu.Unlock()
-
 		if p.cancelled {
-			return muxerFileReponseCancelled()
+			return MuxerFileReponseCancelled()
 		}
+
+		base := strings.TrimSuffix(fname, ".mp4")
 		segment, exist := p.segmentsByName[base]
 		if !exist {
 			return MuxerFileResponse{Status: http.StatusNotFound}
@@ -619,7 +619,7 @@ type nextSegmentRequest struct {
 	res    chan *SegmentFinalized
 }
 
-func (p *playlist) nextSeg(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, error) {
+func (p *playlist) nextSegment(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, error) {
 	p.mu.Lock()
 	if p.cancelled {
 		p.mu.Unlock()
@@ -667,8 +667,4 @@ func (p *playlist) nextSeg(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, e
 		return nil, context.Canceled
 	}
 	return res3, nil
-}
-
-func (p *playlist) nextSegment(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, error) {
-	return p.nextSeg(maybePrevSeg)
 }

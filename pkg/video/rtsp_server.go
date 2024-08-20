@@ -9,6 +9,7 @@ import (
 	"nvr/pkg/video/gortsplib"
 	"nvr/pkg/video/gortsplib/pkg/base"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -164,12 +165,18 @@ func (s *rtspServer) OnSessionOpen(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	pathLogf, err := s.pathManager.pathLogfByName(strings.Split(name, "/")[0])
+	if err != nil {
+		_ = session.Close()
+		return
+	}
+
 	s.sessions[session] = newRTSPSession(
 		s.newSessionID(),
 		session,
 		conn,
 		s.pathManager,
-		s.pathManager.pathLogfByName(name),
+		pathLogf,
 	)
 }
 

@@ -465,10 +465,10 @@ func (i *InputProcess) RTSPprotocol() string {
 }
 
 // VideoTrack returns the stream video track.
-func (i *InputProcess) VideoTrack(ctx context.Context) (*gortsplib.TrackH264, error) {
+func (i *InputProcess) VideoTrack() (*gortsplib.TrackH264, error) {
 	// It may take a few seconds for the stream to
 	// become available after the monitor started.
-	muxer, err := i.serverPath.HLSMuxer(ctx)
+	muxer, err := i.HLSMuxer()
 	if err != nil {
 		return nil, fmt.Errorf("get muxer: %w", err)
 	}
@@ -476,10 +476,10 @@ func (i *InputProcess) VideoTrack(ctx context.Context) (*gortsplib.TrackH264, er
 }
 
 // AudioTrack returns the stream audio track.
-func (i *InputProcess) AudioTrack(ctx context.Context) (*gortsplib.TrackMPEG4Audio, error) {
+func (i *InputProcess) AudioTrack() (*gortsplib.TrackMPEG4Audio, error) {
 	// It may take a few seconds for the stream to
 	// become available after the monitor started.
-	muxer, err := i.serverPath.HLSMuxer(ctx)
+	muxer, err := i.HLSMuxer()
 	if err != nil {
 		return nil, fmt.Errorf("get muxer: %w", err)
 	}
@@ -487,8 +487,8 @@ func (i *InputProcess) AudioTrack(ctx context.Context) (*gortsplib.TrackMPEG4Aud
 }
 
 // HLSMuxer returns the HLS muxer for this input.
-func (i *InputProcess) HLSMuxer(ctx context.Context) (video.IHLSMuxer, error) {
-	return i.serverPath.HLSMuxer(ctx)
+func (i *InputProcess) HLSMuxer() (video.IHLSMuxer, error) {
+	return i.serverPath.HLSMuxer()
 }
 
 // ProcessName name of process "main" or "sub".

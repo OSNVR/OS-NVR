@@ -19,11 +19,13 @@ type stubHlsServer struct{}
 
 func (*stubHlsServer) setPathManager(*pathManager) {}
 
-func (*stubHlsServer) pathSourceReady(pathID, PathConf, log.Func, func(), gortsplib.Tracks) (*HLSMuxer, error) {
+func (*stubHlsServer) muxerCreate(pathID, log.Func, gortsplib.Tracks) (*hls.Muxer, error) {
 	return nil, nil
 }
-func (*stubHlsServer) pathSourceNotReady(string) {}
-func (*stubHlsServer) MuxerByPathName(context.Context, string) (*hls.Muxer, error) {
+
+func (*stubHlsServer) muxerDestroy(pathID) {}
+
+func (*stubHlsServer) muxerByPathName(string) (*hls.Muxer, error) {
 	return nil, nil
 }
 

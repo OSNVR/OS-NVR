@@ -76,8 +76,8 @@ type mockMuxer struct {
 	segCount    int
 }
 
-func newMockMuxerFunc(muxer *mockMuxer) func(context.Context) (video.IHLSMuxer, error) {
-	return func(ctx context.Context) (video.IHLSMuxer, error) {
+func newMockMuxerFunc(muxer *mockMuxer) func() (video.IHLSMuxer, error) {
+	return func() (video.IHLSMuxer, error) {
 		return muxer, muxer.getMuxerErr
 	}
 }
