@@ -28,7 +28,7 @@
 #### Go to `_nvr` home and clone repository.
 
     cd /home/_nvr/
-    sudo -u _nvr git clone --branch master https://codeberg.org/Curid/os-nvr.git
+    sudo -u _nvr git clone --branch v0.14.1 https://codeberg.org/Curid/os-nvr.git
     cd ./os-nvr
 
 
