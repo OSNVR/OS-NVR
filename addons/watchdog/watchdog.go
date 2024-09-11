@@ -17,7 +17,7 @@ func init() {
 	nvr.RegisterLogSource([]string{"watchdog"})
 }
 
-const defaultInterval = 15 * time.Second
+const defaultInterval = 10 * time.Second
 
 func onInputProcessStart(ctx context.Context, i *monitor.InputProcess, _ *[]string) {
 	// Grace period.
@@ -54,7 +54,7 @@ func onInputProcessStart(ctx context.Context, i *monitor.InputProcess, _ *[]stri
 }
 
 type muxer interface {
-	WaitForSegFinalized()
+	WaitForPartFinalized()
 }
 
 type watchdog struct {
@@ -86,7 +86,7 @@ func (d *watchdog) start(ctx context.Context) {
 				continue
 			}
 
-			muxer.WaitForSegFinalized()
+			muxer.WaitForPartFinalized()
 			select {
 			case <-ctx.Done():
 				return

@@ -80,6 +80,7 @@ type IHLSMuxer interface {
 	VideoTrack() *gortsplib.TrackH264
 	AudioTrack() *gortsplib.TrackMPEG4Audio
 	WaitForSegFinalized()
+	WaitForPartFinalized()
 	NextSegment(maybePrevSeg *hls.SegmentFinalized) (*hls.SegmentFinalized, error)
 }
 

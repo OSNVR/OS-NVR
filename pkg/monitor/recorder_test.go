@@ -100,6 +100,7 @@ func (m *mockMuxer) NextSegment(_ *hls.SegmentFinalized) (*hls.SegmentFinalized,
 }
 
 func (m *mockMuxer) WaitForSegFinalized() {}
+func (m *mockMuxer) WaitForPartFinalized() {}
 
 func TestStartRecorder(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {

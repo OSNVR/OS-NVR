@@ -88,6 +88,7 @@ type playlist struct {
 	playlistsOnHold    map[blockingPlaylistRequest]struct{}
 	partsOnHold        map[blockingPartRequest]struct{}
 	segFinalOnHold     map[chan struct{}]struct{}
+	partFinalOnHold    map[chan struct{}]struct{}
 	nextSegmentsOnHold map[nextSegmentRequest]struct{}
 }
 
@@ -102,6 +103,7 @@ func newPlaylist(muxerID uint16, segmentCount int) *playlist {
 		playlistsOnHold:    make(map[blockingPlaylistRequest]struct{}),
 		partsOnHold:        make(map[blockingPartRequest]struct{}),
 		segFinalOnHold:     make(map[chan struct{}]struct{}),
+		partFinalOnHold:    make(map[chan struct{}]struct{}),
 		nextSegmentsOnHold: make(map[nextSegmentRequest]struct{}),
 	}
 }
@@ -120,6 +122,9 @@ func (p *playlist) cancel() {
 		close(req.res)
 	}
 	for done := range p.segFinalOnHold {
+		close(done)
+	}
+	for done := range p.partFinalOnHold {
 		close(done)
 	}
 	for req := range p.nextSegmentsOnHold {
@@ -598,6 +603,11 @@ func (p *playlist) partFinalized(part *MuxerPartFinalized) {
 	p.nextSegmentParts = append(p.nextSegmentParts, part)
 	p.nextPartID = part.id + 1
 
+	for done := range p.partFinalOnHold {
+		close(done)
+		delete(p.partFinalOnHold, done)
+	}
+
 	p.checkPending()
 }
 
@@ -610,6 +620,19 @@ func (p *playlist) waitForSegFinalized() {
 
 	res := make(chan struct{})
 	p.segFinalOnHold[res] = struct{}{}
+	p.mu.Unlock() // Must be unlocked here.
+	<-res
+}
+
+func (p *playlist) waitForPartFinalized() {
+	p.mu.Lock()
+	if p.cancelled {
+		p.mu.Unlock()
+		return
+	}
+
+	res := make(chan struct{})
+	p.partFinalOnHold[res] = struct{}{}
 	p.mu.Unlock() // Must be unlocked here.
 	<-res
 }

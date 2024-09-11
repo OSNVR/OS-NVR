@@ -224,6 +224,11 @@ func (m *Muxer) WaitForSegFinalized() {
 	m.playlist.waitForSegFinalized()
 }
 
+// WaitForPartFinalized blocks until a new part has been finalized.
+func (m *Muxer) WaitForPartFinalized() {
+	m.playlist.waitForPartFinalized()
+}
+
 // NextSegment returns the first segment with a ID greater than prevID.
 // Will wait for new segments if the next segment isn't cached.
 func (m *Muxer) NextSegment(maybePrevSeg *SegmentFinalized) (*SegmentFinalized, error) {

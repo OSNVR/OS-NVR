@@ -13,7 +13,7 @@ import (
 
 type stubMuxer struct{}
 
-func (m *stubMuxer) WaitForSegFinalized() {}
+func (m *stubMuxer) WaitForPartFinalized() {}
 
 func newStubMuxer(err error) func(context.Context) (muxer, error) {
 	return func(context.Context) (muxer, error) {
